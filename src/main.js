@@ -23,7 +23,7 @@ const state = {
   sunIntensity: 14,
   skyIntensity: 2.5,
   moonIntensity: 0.55,
-  softness: 1.0,        // multiplier on the sun's angular diameter (glass diffusion)
+  softness: 2.0,        // multiplier on the sun's angular diameter: 1 = bare sun; old glass diffuses more
   haze: 0.012,
   rays: 0.65,
   glow: 1.6,
@@ -31,7 +31,9 @@ const state = {
   floorPolish: 0.85,
   exposure: 1.0,
   autoExposure: true,
-  bloom: 0.35,
+  bloom: 0.45,
+  bloomRadius: 0.6,
+  bloomThreshold: 1.0,
   raySteps: 48,
   candles: 1.0,
 };
@@ -147,6 +149,8 @@ function applyLighting() {
   pipeline.compMat.uniforms.uVolStrength.value = state.rays;
   pipeline.compMat.uniforms.uFogColor.value.copy(sky.sky).multiplyScalar(0.02);
   pipeline.bloom.strength = state.bloom;
+  pipeline.bloom.radius = state.bloomRadius;
+  pipeline.bloom.threshold = state.bloomThreshold;
 
   // The eye adapts: open up the exposure as the key light fades.
   const lum = sky.day + (sky.isSun ? Math.min(sky.color.g * 1.2, 1) : 0);
@@ -184,7 +188,7 @@ fSun.add(state, 'sunIntensity', 0, 40, 0.5).name('sun intensity').onChange(apply
 fSun.add(state, 'skyIntensity', 0, 8, 0.1).name('sky intensity').onChange(applyLighting);
 fSun.add(state, 'moonIntensity', 0, 3, 0.05).name('moon intensity').onChange(applyLighting);
 const fGlass = gui.addFolder('Glass & light');
-fGlass.add(state, 'softness', 0.1, 8, 0.1).name('sun size / diffusion').onChange(applyLighting);
+fGlass.add(state, 'softness', 0.1, 12, 0.1).name('light softness').onChange(applyLighting);
 fGlass.add(lightU.uGlassScatter, 'value', 0, 0.3, 0.005).name('glass scatter');
 fGlass.add(state, 'glow', 0, 3, 0.05).name('window glow').onChange(applyLighting);
 fGlass.add(state, 'reflections', 0, 3, 0.05).onChange(applyLighting);
@@ -195,10 +199,13 @@ fAir.add(state, 'haze', 0, 0.06, 0.001).name('haze density').onChange(applyLight
 fAir.add(state, 'rays', 0, 4, 0.05).name('ray strength').onChange(applyLighting);
 fAir.add(pipeline.volMat.uniforms.uAniso, 'value', 0, 0.9, 0.01).name('forward scatter');
 fAir.add(state, 'raySteps', [16, 32, 48, 64, 96]).name('ray steps').onChange((v) => pipeline.setVolSteps(v));
+const fBloom = gui.addFolder('Bloom');
+fBloom.add(state, 'bloom', 0, 3, 0.01).name('strength').onChange(applyLighting);
+fBloom.add(state, 'bloomRadius', 0, 1.5, 0.01).name('radius').onChange(applyLighting);
+fBloom.add(state, 'bloomThreshold', 0, 4, 0.01).name('threshold').onChange(applyLighting);
 const fCam = gui.addFolder('Image');
 fCam.add(state, 'exposure', 0.2, 4, 0.01).onChange(applyLighting);
 fCam.add(state, 'autoExposure').name('auto exposure').onChange(applyLighting);
-fCam.add(state, 'bloom', 0, 1.5, 0.01).onChange(applyLighting);
 fCam.add({ view: q.get('view') ?? 'nave' }, 'view', Object.keys(VIEWS)).onChange(setView);
 fAir.close(); fCam.close();
 if (q.get('ui') === '0') { gui.hide(); document.getElementById('bar').style.display = 'none'; document.getElementById('hint').style.display = 'none'; }

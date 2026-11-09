@@ -36,6 +36,8 @@ uniform sampler2D uShadowMap;
 uniform mat4 uShadowMatrix;  // world -> shadow uv/depth (0..1)
 uniform vec2 uShadowTexel;   // 1 / shadow map size
 uniform float uShadowBias;
+uniform float uShadowWorldTexel; // metres covered by one shadow texel
+uniform float uShadowRange;      // metres between the shadow camera's near and far planes
 
 const float PI = 3.14159265;
 
@@ -96,20 +98,38 @@ vec3 glassTransmit(vec3 P, float rot, const int quality) {
 float shadowTap(vec2 uv, float z) {
   return step(z - uShadowBias, texture(uShadowMap, uv).r);
 }
+// Soft shadows with a physically sized penumbra (PCSS): the edge of a shadow
+// is as wide as  (distance from the occluding edge) * (angular size of the
+// light), so the outline of a window is crisp on the sill and soft far away —
+// the same rule that blurs the glass image itself.
 float sunShadow(vec3 P, vec3 N, float rot, const int quality) {
   vec4 sc = uShadowMatrix * vec4(P + N * 0.035, 1.0);
   if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
   if (quality == 0) return shadowTap(sc.xy, sc.z);
   float c = cos(rot), s = sin(rot);
   mat2 R = mat2(c, s, -s, c);
-  float acc = 0.0;
-  for (int k = 0; k < 8; k++) { // Vogel disc
+  // 1. blocker search: how far in front of us is whatever blocks the light?
+  float searchR = clamp(18.0 * uLightSpread / uShadowWorldTexel, 2.0, 48.0);
+  float zsum = 0.0, zn = 0.0;
+  for (int k = 0; k < 10; k++) {
     float fk = float(k) + 0.5;
-    float r = sqrt(fk / 8.0) * 2.2;
     float a = fk * 2.39996323;
-    acc += shadowTap(sc.xy + R * (vec2(cos(a), sin(a)) * r) * uShadowTexel, sc.z);
+    vec2 o = R * (vec2(cos(a), sin(a)) * sqrt(fk / 10.0) * searchR) * uShadowTexel;
+    float d = texture(uShadowMap, sc.xy + o).r;
+    if (d < sc.z - uShadowBias) { zsum += d; zn += 1.0; }
   }
-  return acc / 8.0;
+  if (zn < 0.5) return 1.0;
+  // 2. penumbra radius in texels
+  float dist = (sc.z - zsum / zn) * uShadowRange;
+  float r = clamp(0.5 * dist * uLightSpread / uShadowWorldTexel, 1.5, 64.0);
+  // 3. filter
+  float acc = 0.0;
+  for (int k = 0; k < 20; k++) {
+    float fk = float(k) + 0.5;
+    float a = fk * 2.39996323;
+    acc += shadowTap(sc.xy + R * (vec2(cos(a), sin(a)) * sqrt(fk / 20.0) * r) * uShadowTexel, sc.z);
+  }
+  return acc / 20.0;
 }
 
 // Radiance leaving the room side of the glass toward direction `toEye`

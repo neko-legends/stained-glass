@@ -144,6 +144,8 @@ export class Pipeline {
     m.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
     m.multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
     this.lightU.uShadowBias.value = 0.03 / (cam.far - cam.near);
+    this.lightU.uShadowRange.value = cam.far - cam.near;
+    this.lightU.uShadowWorldTexel.value = Math.max(cam.right - cam.left, cam.top - cam.bottom) / SHADOW_SIZE;
 
     const r = this.renderer;
     const prev = this.scene.overrideMaterial;

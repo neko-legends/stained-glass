@@ -34,6 +34,8 @@ export function createLightUniforms(textures, ppm) {
     uShadowMatrix: { value: new THREE.Matrix4() },
     uShadowTexel: { value: new THREE.Vector2(1 / 4096, 1 / 4096) },
     uShadowBias: { value: 0.0004 },
+    uShadowWorldTexel: { value: 0.015 },
+    uShadowRange: { value: 70 },
     // room lighting
     uAmbient: { value: new THREE.Color(0.01, 0.01, 0.012) },
     uBounce: { value: new THREE.Color(0, 0, 0) },
