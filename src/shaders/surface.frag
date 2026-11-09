@@ -4,7 +4,8 @@
 uniform vec3 uColor;
 uniform float uRough;
 uniform float uMetal;
-uniform int uPattern;      // 0 plain, 1 ashlar masonry, 2 floor slabs, 3 wood
+uniform int uPattern;      // 0 plain, 1 ashlar masonry, 2 floor slabs, 3 wood, 4 marble
+uniform float uWrap;       // 0 = Lambert; > 0 lets light bleed past the terminator (marble)
 uniform float uFloorPolish;
 uniform vec3 uAmbient;
 uniform vec3 uBounce;
@@ -81,6 +82,16 @@ void main() {
     vec2 q = an.y > 0.75 ? P.xz : (an.x > an.z ? P.zy : P.xy);
     float g = fbm(vec2(q.x * 14.0, q.y * 0.8));
     albedo *= 0.7 + 0.5 * g;
+  } else if (uPattern == 4) {
+    // polished white marble: soft grey veins warped by noise
+    vec2 q = P.xy * 1.6 + vec2(P.z * 1.3, -P.z * 0.9);
+    float warp = fbm(q * 1.4 + 3.7);
+    float v = abs(sin((q.x * 0.9 + q.y * 1.7 + warp * 5.5) * 1.8));
+    float vein = smoothstep(0.12, 0.0, v) * (0.35 + 0.65 * fbm(q * 3.0));
+    float cloud = fbm(q * 0.8 + 11.0);
+    albedo *= (0.9 + 0.14 * cloud) * (1.0 - 0.26 * vein);
+    albedo = mix(albedo, albedo * vec3(0.93, 0.95, 1.0), vein);
+    rough = clamp(uRough + 0.12 * vein, 0.05, 1.0);
   } else {
     albedo *= 0.88 + 0.24 * fbm(P.xy * 4.0 + P.z * 3.1);
   }
@@ -91,8 +102,9 @@ void main() {
   // --- key light through the glass ---------------------------------------
   vec3 L = uLightDir;
   float ndl = dot(N, L);
+  float ndlW = max((ndl + uWrap) / (1.0 + uWrap), 0.0);
   vec3 sunE = vec3(0.0);
-  if (ndl > 0.0 && dot(uLightColor, vec3(1.0)) > 1e-5) {
+  if (ndlW > 0.0 && dot(uLightColor, vec3(1.0)) > 1e-5) {
     float sh = sunShadow(P, N, rot, 1);
     if (sh > 0.0) sunE = uLightColor * sh * glassTransmit(P, 0.7, 1);
   }
@@ -104,7 +116,7 @@ void main() {
   float d2 = dot(Lc, Lc);
   vec3 candle = uCandleColor * max(dot(N, Lc * inversesqrt(d2)), 0.0) / (1.0 + 0.06 * d2);
 
-  vec3 diffuse = albedo * (1.0 - uMetal) * (sunE * max(ndl, 0.0) + glow + amb + candle);
+  vec3 diffuse = albedo * (1.0 - uMetal) * (sunE * ndlW + glow + amb + candle);
 
   // --- specular -----------------------------------------------------------
   vec3 F0 = mix(vec3(0.04), albedo, uMetal);

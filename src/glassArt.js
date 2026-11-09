@@ -317,11 +317,20 @@ function drawLancet(p, o, index) {
 
 function drawOculus(p, o) {
   const c = p.ctx;
+  const warm = o.bay % 2 === 1;
   c.save();
-  p.circle(o.cu, o.cv, o.r); c.clip();
-  c.fillStyle = '#000'; c.fillRect(o.cu - o.r, o.cv - o.r, o.r * 2, o.r * 2);
-  p.rosette(o.cu, o.cv, o.r, 6, o.bay % 2 ? BLUES : REDS, C.gold, o.bay % 2 ? C.ruby : C.sky);
+  openingPath(c, o); c.clip();
+  const R = o.r * 1.8;
+  c.fillStyle = '#000'; c.fillRect(o.cu - R, o.cv - R, R * 2, R * 2);
+  if (o.type === 'poly') {
+    // free-form shape: mosaic ground to the edge, rosette in the middle
+    p.mosaic(o.cu - R, o.cv - R, o.cu + R, o.cv + R, o.r * 0.24, warm ? [C.gold, C.amber, C.lemon] : [C.violet, C.rose, C.sky]);
+    p.rosette(o.cu, o.cv - o.r * 0.08, o.r * 0.7, 6, warm ? BLUES : REDS, C.gold, warm ? C.ruby : C.sky);
+  } else {
+    p.rosette(o.cu, o.cv, o.r, 6, warm ? BLUES : REDS, C.gold, warm ? C.ruby : C.sky);
+  }
   c.restore();
+  if (o.type === 'poly') p.border(() => openingPath(c, o), o.r * 0.09, C.white, warm ? C.cobalt : C.ruby, null);
 }
 
 function drawRose(p, o, variant) {
@@ -431,6 +440,11 @@ function glassGrain(ctx, W, H, rng) {
 
 function openingPath(ctx, o) {
   if (o.type === 'lancet') { lancetPath(ctx, o.u, o.v0, o.w, o.vs); return; }
+  if (o.type === 'poly') {
+    ctx.beginPath(); ctx.moveTo(o.pts[0][0], o.pts[0][1]);
+    for (let i = 1; i < o.pts.length; i++) ctx.lineTo(o.pts[i][0], o.pts[i][1]);
+    ctx.closePath(); return;
+  }
   ctx.beginPath(); ctx.arc(o.cu, o.cv, o.r, 0, Math.PI * 2);
 }
 
@@ -447,10 +461,17 @@ function drawImageGroup(p, group, img) {
   for (const o of group.openings) {
     c.save();
     openingPath(c, o); c.clip();
+    // transparent pixels of the picture are opaque (no glass there), so an
+    // image with an alpha channel can carry its own window shape
+    c.fillStyle = '#000'; c.fillRect(u0 - 1, v0 - 1, gw + 2, gh + 2);
     c.translate(u0 + gw / 2, v0 + gh / 2);
     c.scale(-1, -1); // canvas is v-up; mirror u for the inside view
     c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    // pictures are usually paler than real pot-metal glass; deepen them so the
+    // light they cast is coloured rather than near-white
+    c.filter = 'saturate(1.55) brightness(0.74) contrast(1.18)';
     c.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    c.filter = 'none';
     c.restore();
     // iron saddle bars and a lead edge keep it reading as a leaded window
     c.save();

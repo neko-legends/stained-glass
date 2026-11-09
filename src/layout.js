@@ -23,6 +23,17 @@ const { L, W, wallT } = DIM;
 
 // Each wall: origin = inner-face lower-left corner, U along the wall, V up,
 // N = U x V pointing OUT of the building. (u, v) are metres on the wall.
+// Cat-head outline as a polygon (wall metres, counter-clockwise).
+function catHead(cu, cv, r) {
+  const pts = [];
+  const P = (deg, k = 1) => [cu + Math.cos((deg * Math.PI) / 180) * r * 1.08 * k, cv + Math.sin((deg * Math.PI) / 180) * r * 0.92 * k];
+  for (let a = 78; a <= 102; a += 6) pts.push(P(a));  // crown between the ears
+  pts.push(P(122, 1.62));                              // left ear tip
+  for (let a = 146; a <= 394; a += 8) pts.push(P(a)); // cheek, chin, cheek
+  pts.push(P(58, 1.62));                               // right ear tip
+  return pts;
+}
+
 function sideOpenings() {
   const ops = [];
   for (let b = 0; b < DIM.bays; b++) {
@@ -30,7 +41,8 @@ function sideOpenings() {
     const lw = 2.4, gap = 0.5, sill = 7.6, spring = 16.6;
     ops.push({ type: 'lancet', u: c - gap / 2 - lw, w: lw, v0: sill, vs: spring, bay: b, slot: 0 });
     ops.push({ type: 'lancet', u: c + gap / 2, w: lw, v0: sill, vs: spring, bay: b, slot: 1 });
-    ops.push({ type: 'circle', cu: c, cv: 19.75, r: 1.05, bay: b });
+    // free-form opening: any closed polygon works (here, a cat's head)
+    ops.push({ type: 'poly', pts: catHead(c, 19.7, 1.0), cu: c, cv: 19.7, r: 1.0, bay: b });
   }
   return ops;
 }
@@ -90,6 +102,8 @@ function bounds(openings) {
     if (o.type === 'lancet') {
       u0 = Math.min(u0, o.u); u1 = Math.max(u1, o.u + o.w);
       v0 = Math.min(v0, o.v0); v1 = Math.max(v1, o.vs + o.w * 0.8661);
+    } else if (o.type === 'poly') {
+      for (const [u, v] of o.pts) { u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
     } else {
       u0 = Math.min(u0, o.cu - o.r); u1 = Math.max(u1, o.cu + o.r);
       v0 = Math.min(v0, o.cv - o.r); v1 = Math.max(v1, o.cv + o.r);

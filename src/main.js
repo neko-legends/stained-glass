@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import GUI from 'lil-gui';
 import { WALLS, DIM } from './layout.js';
 import { paintWall } from './glassArt.js';
@@ -24,7 +25,7 @@ const state = {
   moonIntensity: 0.55,
   softness: 1.0,        // multiplier on the sun's angular diameter (glass diffusion)
   haze: 0.012,
-  rays: 0.8,
+  rays: 0.65,
   glow: 1.6,
   reflections: 1.0,
   floorPolish: 0.85,
@@ -64,8 +65,24 @@ const textures = WALLS.map((w) => {
 const lightU = createLightUniforms(textures, ppm);
 const materials = createMaterials(lightU, textures);
 const scene = new THREE.Scene();
-const { group } = buildCathedral(materials);
+const { group, statueBase } = buildCathedral(materials);
 scene.add(group);
+
+// --- angel statue (generated model, lit by the same marble shader) --------------
+const STATUE_HEIGHT = 5.6;
+new GLTFLoader().load('./models/angel.glb', (gltf) => {
+  const root = gltf.scene;
+  root.rotation.y = -Math.PI / 2; // model faces +Z; the nave is along -X from the altar
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  const k = STATUE_HEIGHT / (box.max.y - box.min.y);
+  root.scale.setScalar(k);
+  root.position.set(statueBase.x - k * (box.min.x + box.max.x) / 2, statueBase.y - k * box.min.y, statueBase.z - k * (box.min.z + box.max.z) / 2);
+  root.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); o.material = materials.marble; } });
+  scene.add(root);
+  pipeline.shadowDirty = true;
+  window.__statueReady = true;
+}, undefined, (e) => { console.warn('statue:', e.message ?? e); window.__statueReady = true; });
 
 const camera = new THREE.PerspectiveCamera(num('fov', 62), window.innerWidth / window.innerHeight, 0.1, 200);
 camera.layers.enable(1);
@@ -186,6 +203,27 @@ fCam.add({ view: q.get('view') ?? 'nave' }, 'view', Object.keys(VIEWS)).onChange
 fAir.close(); fCam.close();
 if (q.get('ui') === '0') { gui.hide(); document.getElementById('bar').style.display = 'none'; document.getElementById('hint').style.display = 'none'; }
 else if (window.innerWidth < 700) gui.close();
+
+// --- music ---------------------------------------------------------------------
+// Browsers only allow audio after a user gesture, so it starts on the first
+// click / key press unless the visitor has switched it off.
+const music = new Audio('./audio/heavenly.mp3');
+music.loop = true;
+music.preload = 'none';
+const musicState = { on: q.get('music') !== '0', volume: num('vol', 0.5) };
+const musicBtn = document.getElementById('music');
+function syncMusic() {
+  music.volume = musicState.volume;
+  if (musicState.on) music.play().catch(() => {}); else music.pause();
+  musicBtn.textContent = musicState.on ? 'Music: on' : 'Music: off';
+  musicBtn.setAttribute('aria-pressed', String(musicState.on));
+}
+musicBtn.addEventListener('click', (e) => { e.stopPropagation(); musicState.on = !musicState.on; syncMusic(); });
+const firstGesture = () => { syncMusic(); window.removeEventListener('pointerdown', firstGesture); window.removeEventListener('keydown', firstGesture); };
+window.addEventListener('pointerdown', firstGesture);
+window.addEventListener('keydown', firstGesture);
+musicBtn.textContent = musicState.on ? 'Music: on' : 'Music: off';
+gui.add(musicState, 'volume', 0, 1, 0.01).name('music volume').onChange(syncMusic);
 
 // --- swappable glass art ---------------------------------------------------------
 // public/glass/manifest.json lists picture sets; a set maps slot ids (layout.js

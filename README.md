@@ -78,6 +78,14 @@ E(P) = E_sun · shadow(P) · Π T_wall( hit(P, L) )
 
 **Sun and moon.** `src/sun.js` computes solar position from time, day of year and latitude; `main.js` rotates it into the building's frame. Air mass reddens the beam near the horizon. A full moon sits opposite the sun and takes over at night, with the exposure opening up.
 
+## Window shapes
+
+The pane rectangle only carries the texture; it does not define the window. A window's shape comes from two things that always agree because both are generated from `src/layout.js`: the hole cut in the wall (which the sun depth map sees) and black in the glass texture (which blocks light exactly like lead). Openings can be `lancet`, `circle` or `poly` (any closed polygon; the small cat-head windows above the side lancets are polygons). A picture with an alpha channel also works: transparent pixels become opaque, so the image can carry its own outline.
+
+## Statue and music
+
+`public/models/angel.glb` is a marble angel generated from a reference image with a local image-to-3D model, then lit by the same surface shader with a procedural marble pattern. `public/audio/heavenly.mp3` loops once the visitor first clicks (browsers block audio before that); the Music button and `music=0` turn it off.
+
 ## Files
 
 | File | Role |

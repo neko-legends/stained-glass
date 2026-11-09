@@ -54,6 +54,7 @@ export function createMaterials(lightU, textures) {
         uRough: { value: rough },
         uMetal: { value: metal },
         uPattern: { value: pattern },
+        uWrap: { value: extra.wrap ?? 0 },
         uEmissive: { value: new THREE.Color(extra.emissive ?? 0x000000) },
       },
       vertexShader: surfaceVert,
@@ -69,6 +70,7 @@ export function createMaterials(lightU, textures) {
     gold: surface(0xd9a441, 0.34, 1, 0),
     cloth: surface(0xe9e2d2, 0.8, 0, 0),
     wood: surface(0x4a2f1b, 0.6, 0, 3),
+    marble: surface(0xd9d5cf, 0.3, 0, 4, { wrap: 0.12 }),
     dark: surface(0x1c1814, 0.9, 0, 0),
     flame: surface(0x000000, 1, 0, 0),
   };

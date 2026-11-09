@@ -27,7 +27,7 @@ function circleHole(o) {
 function wallGeometry(origin, U, V, N, width, height, thickness, openings, u0 = 0) {
   const shape = new THREE.Shape();
   shape.moveTo(u0, 0); shape.lineTo(u0 + width, 0); shape.lineTo(u0 + width, height); shape.lineTo(u0, height); shape.closePath();
-  for (const o of openings) shape.holes.push(o.type === 'lancet' ? lancetHole(o) : circleHole(o));
+  for (const o of openings) shape.holes.push(o.type === 'lancet' ? lancetHole(o) : o.type === 'poly' ? new THREE.Path(o.pts.map(([u, v]) => new THREE.Vector2(u, v))) : circleHole(o));
   const g = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 20 });
   const m = new THREE.Matrix4().makeBasis(U, V, N).setPosition(origin);
   g.applyMatrix4(m);
@@ -174,24 +174,12 @@ export function buildCathedral(materials) {
   bins.gold.push(box(1.25, 1.1, 3.3, ex - 4.6, dais + 0.55, 0));
   bins.cloth.push(box(1.45, 0.07, 3.6, ex - 4.6, dais + 1.135, 0));
   bins.cloth.push(box(0.04, 0.5, 3.6, ex - 5.33, dais + 0.92, 0));
-  // reredos
-  const rx = ex - 1.9;
-  bins.gold.push(box(0.8, 2.4, 6.4, rx, dais + 1.2, 0));
-  bins.gold.push(box(1.0, 0.18, 6.7, rx, dais + 2.45, 0));
-  for (let k = -2; k <= 2; k++) {
-    const h = 2.0 + (2 - Math.abs(k)) * 0.9;
-    const z = k * 1.24;
-    bins.gold.push(box(0.6, h, 0.98, rx, dais + 2.5 + h / 2, z));
-    bins.dark.push(box(0.1, h * 0.62, 0.6, rx - 0.3, dais + 2.6 + h * 0.36, z));
-    const cone = new THREE.ConeGeometry(0.72, 1.5, 4); cone.rotateY(Math.PI / 4); cone.translate(rx, dais + 2.5 + h + 0.75, z);
-    bins.gold.push(cone);
-    for (const s of [-1, 1]) {
-      const pin = new THREE.ConeGeometry(0.12, 0.9, 4); pin.translate(rx, dais + 2.5 + h + 0.45, z + s * 0.56);
-      bins.gold.push(pin);
-    }
-  }
-  bins.gold.push(box(0.36, 1.6, 0.36, rx, dais + 2.5 + 3.8 + 1.5 + 0.3, 0));
-  { const sp = new THREE.ConeGeometry(0.3, 2.6, 4); sp.rotateY(Math.PI / 4); sp.translate(rx, dais + 2.5 + 3.8 + 1.5 + 1.1 + 1.3, 0); bins.gold.push(sp); }
+  // plinth for the statue behind the altar (the statue itself is a GLB loaded in main.js)
+  const rx = ex - 2.3;
+  bins.plain.push(box(2.6, 0.35, 2.6, rx, dais + 0.175, 0));
+  bins.plain.push(box(2.0, 1.5, 2.0, rx, dais + 0.35 + 0.75, 0));
+  bins.plain.push(box(2.3, 0.22, 2.3, rx, dais + 1.85 + 0.11, 0));
+  bins.gold.push(box(2.04, 0.12, 2.04, rx, dais + 1.2, 0));
 
   const flames = [];
   const candle = (x, y, z, standH) => {
@@ -243,5 +231,5 @@ export function buildCathedral(materials) {
     group.add(mesh);
   });
 
-  return { group, flames };
+  return { group, flames, statueBase: new THREE.Vector3(rx, dais + 2.07, 0) };
 }

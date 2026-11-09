@@ -1,3 +1,15 @@
 {
-  "sets": {}
+  "default": "neko",
+  "sets": {
+    "neko": {
+      "label": "Neko Legends",
+      "slots": {
+        "side": ["neko/side-1.webp", "neko/side-2.webp", "neko/side-3.webp", "neko/side-4.webp", "neko/side-5.webp", "neko/side-6.webp"],
+        "altar-lancets": "neko/altar-lancets.webp",
+        "altar-rose": "neko/altar-rose.webp",
+        "entrance-lancets": "neko/entrance-lancets.webp",
+        "entrance-rose": "neko/entrance-rose.webp"
+      }
+    }
+  }
 }
