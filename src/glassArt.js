@@ -429,13 +429,53 @@ function glassGrain(ctx, W, H, rng) {
   ctx.restore();
 }
 
-/** Paint one wall's glass band. Returns a canvas of band.w*ppm x band.h*ppm px. */
-export function paintWall(wall, ppm) {
+function openingPath(ctx, o) {
+  if (o.type === 'lancet') { lancetPath(ctx, o.u, o.v0, o.w, o.vs); return; }
+  ctx.beginPath(); ctx.arc(o.cu, o.cv, o.r, 0, Math.PI * 2);
+}
+
+// One picture stretched (cover-fit) across a group of openings. The wall's U
+// axis runs right-to-left as seen from inside, so the picture is mirrored in u
+// to read the right way round from the nave.
+function drawImageGroup(p, group, img) {
+  const c = p.ctx;
+  const { u0, u1, v0, v1 } = group.rect;
+  const gw = u1 - u0, gh = v1 - v0;
+  const iw = img.naturalWidth ?? img.width, ih = img.naturalHeight ?? img.height;
+  const scale = Math.max(gw / iw, gh / ih);
+  const dw = iw * scale, dh = ih * scale;
+  for (const o of group.openings) {
+    c.save();
+    openingPath(c, o); c.clip();
+    c.translate(u0 + gw / 2, v0 + gh / 2);
+    c.scale(-1, -1); // canvas is v-up; mirror u for the inside view
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    c.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    c.restore();
+    // iron saddle bars and a lead edge keep it reading as a leaded window
+    c.save();
+    openingPath(c, o); c.clip();
+    if (o.type === 'lancet') {
+      const n = Math.max(2, Math.round((o.vs - o.v0) / 1.1));
+      for (let k = 1; k < n; k++) p.line(o.u, o.v0 + ((o.vs - o.v0) * k) / n, o.u + o.w, o.v0 + ((o.vs - o.v0) * k) / n, LEAD * 1.2);
+    }
+    openingPath(c, o); c.strokeStyle = '#000'; c.lineWidth = LEAD * 4; c.stroke();
+    c.restore();
+  }
+}
+
+/**
+ * Paint one wall's glass band into `canvas` (created if omitted).
+ * `images` maps a group id (see layout.js) to a loaded image; groups without
+ * one get the procedural design. Returns the canvas (band.w*ppm x band.h*ppm).
+ */
+export function paintWall(wall, ppm, images = null, canvas = null) {
   const { band } = wall;
   const W = Math.round(band.w * ppm), H = Math.round(band.h * ppm);
-  const canvas = document.createElement('canvas');
+  canvas ??= document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
   // draw in wall metres, v up; canvas top row = band.v1 (texture flipY keeps v up)
@@ -444,12 +484,15 @@ export function paintWall(wall, ppm) {
 
   const rng = mulberry32(wall.seed * 7919 + 13);
   const p = new Painter(ctx, rng);
-  let li = 0, ri = 0;
+  let li = 0;
   for (const o of wall.openings) {
+    // the procedural art is always drawn so the random sequence (and so every
+    // other window) stays identical when one slot is swapped for a picture
     if (o.type === 'lancet') drawLancet(p, o, li++);
-    else if (o.rose) drawRose(p, o, wall.name === 'east' ? 0 : 1 + ri++ * 0);
+    else if (o.rose) drawRose(p, o, wall.name === 'altar' ? 0 : 1);
     else drawOculus(p, o);
   }
   glassGrain(ctx, W, H, rng);
+  if (images) for (const g of wall.groups) { const img = images.get(g.id); if (img) drawImageGroup(p, g, img); }
   return canvas;
 }

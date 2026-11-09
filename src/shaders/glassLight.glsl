@@ -116,7 +116,7 @@ float sunShadow(vec3 P, vec3 N, float rot, const int quality) {
 // (unit, pointing from the glass into the room), for glass transmittance T.
 vec3 glassRadiance(vec3 T, vec3 toEye, vec3 nIn) {
   float lit = smoothstep(0.0, 0.12, -dot(nIn, uLightDir)); // sun on the outer face?
-  float mu = max(dot(-toEye, uLightDir), 0.0);            // looking toward the sun
+  float mu = clamp(dot(-toEye, uLightDir), 0.0, 1.0);            // looking toward the sun
   float lobe = 0.35 + 1.5 * pow(mu, 6.0) + 6.0 * pow(mu, 90.0);
   float up = clamp(-toEye.y * 0.5 + 0.5, 0.0, 1.0);        // horizon is paler than zenith
   vec3 sky = uSkyColor * mix(1.15, 0.8, up);

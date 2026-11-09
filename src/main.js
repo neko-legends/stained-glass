@@ -15,6 +15,8 @@ const state = {
   time: num('t', 10.5),
   dayOfYear: num('day', 100),
   latitude: num('lat', 47),
+  altarHeading: num('heading', 180), // compass bearing the altar end faces: 180 = south
+  art: q.get('art') ?? 'auto',
   playing: q.get('play') === '1',
   speed: 0.5,           // hours per second
   sunIntensity: 14,
@@ -46,8 +48,10 @@ const maxTex = renderer.capabilities.maxTextureSize;
 let ppm = num('ppm', 128);
 const widest = Math.max(...WALLS.map((w) => w.band.w));
 ppm = Math.min(ppm, Math.floor(maxTex / widest));
+// slot id -> image, for windows that show a picture instead of the procedural design
+const glassImages = new Map();
 const textures = WALLS.map((w) => {
-  const tex = new THREE.CanvasTexture(paintWall(w, ppm));
+  const tex = new THREE.CanvasTexture(paintWall(w, ppm, glassImages));
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.generateMipmaps = true;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -68,8 +72,8 @@ camera.layers.enable(1);
 const VIEWS = {
   nave: [[-9.5, 1.8, 1.2], [16, 8.5, -0.3]],
   floor: [[-6, 9, -5.5], [6, 0, 3]],
-  south: [[-4, 2.2, -6], [4, 11, 8]],
-  west: [[17, 2.0, -1.5], [-24, 11, 0]],
+  side: [[-4, 2.2, -6], [4, 11, 8]],
+  entrance: [[17, 2.0, -1.5], [-24, 11, 0]],
   rose: [[8, 3, 0], [24, 19, 0]],
   low: [[-3, 0.9, -2.5], [20, 6, 1]],
 };
@@ -106,6 +110,10 @@ function phaseName(sky) {
 function applyLighting() {
   const sky = computeSky(state.time, state.dayOfYear, state.latitude);
   const intensity = sky.isSun ? state.sunIntensity : state.moonIntensity;
+  // compass (east, up, south) -> building frame (+X = altar end)
+  const hd = THREE.MathUtils.degToRad(state.altarHeading);
+  const aE = Math.sin(hd), aS = -Math.cos(hd);
+  sky.dir.set(sky.dir.x * aE + sky.dir.z * aS, sky.dir.y, -sky.dir.x * aS + sky.dir.z * aE);
   lightU.uLightDir.value.copy(sky.dir);
   lightU.uLightColor.value.copy(sky.color).multiplyScalar(intensity);
   lightU.uLightSpread.value = SUN_ANGULAR_DIAMETER * state.softness;
@@ -150,6 +158,8 @@ syncPlay();
 
 const gui = new GUI({ title: 'Stained Glass' });
 const fSun = gui.addFolder('Sun & sky');
+fSun.add(state, 'time', 0, 24, 0.01).name('time of day').listen().onChange(applyLighting);
+fSun.add(state, 'altarHeading', 0, 360, 1).name('altar faces (°, 180 = S)').onChange(applyLighting);
 fSun.add(state, 'dayOfYear', 1, 365, 1).name('day of year').onChange(applyLighting);
 fSun.add(state, 'latitude', 0, 66, 0.5).onChange(applyLighting);
 fSun.add(state, 'speed', 0.05, 4, 0.05).name('play speed (h/s)');
@@ -173,8 +183,81 @@ fCam.add(state, 'exposure', 0.2, 4, 0.01).onChange(applyLighting);
 fCam.add(state, 'autoExposure').name('auto exposure').onChange(applyLighting);
 fCam.add(state, 'bloom', 0, 1.5, 0.01).onChange(applyLighting);
 fCam.add({ view: q.get('view') ?? 'nave' }, 'view', Object.keys(VIEWS)).onChange(setView);
+fAir.close(); fCam.close();
 if (q.get('ui') === '0') { gui.hide(); document.getElementById('bar').style.display = 'none'; document.getElementById('hint').style.display = 'none'; }
 else if (window.innerWidth < 700) gui.close();
+
+// --- swappable glass art ---------------------------------------------------------
+// public/glass/manifest.json lists picture sets; a set maps slot ids (layout.js
+// groups: right-1..6, left-1..6, altar-lancets, altar-rose, entrance-lancets,
+// entrance-rose) to image files. "side" is a list cycled over the 12 side bays.
+const loadImage = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('cannot load ' + src)); im.src = src; });
+function repaint(walls = WALLS) {
+  for (const w of walls) { const i = WALLS.indexOf(w); paintWall(w, ppm, glassImages, textures[i].image); textures[i].needsUpdate = true; }
+}
+let manifest = { sets: {} };
+async function applyArtSet(name) {
+  glassImages.clear();
+  const set = manifest.sets[name];
+  if (set) {
+    const slots = set.slots ?? {};
+    const side = slots.side ?? [];
+    const jobs = [];
+    for (const w of WALLS) for (const g of w.groups) {
+      let file = slots[g.id];
+      const m = /^(right|left)-(\d+)$/.exec(g.id);
+      if (!file && m && side.length) file = side[(Number(m[2]) - 1 + (m[1] === 'left' ? Math.ceil(side.length / 2) : 0)) % side.length];
+      if (file) jobs.push(loadImage('./glass/' + file).then((im) => glassImages.set(g.id, im), (e) => console.warn(e.message)));
+    }
+    await Promise.all(jobs);
+  }
+  repaint();
+}
+const artCtl = { set: 'procedural' };
+const fArt = gui.addFolder('Glass art');
+let artDropdown = fArt.add(artCtl, 'set', ['procedural']).name('art set').onChange(applyArtSet);
+fArt.add({ hint() {} }, 'hint').name('tip: drop an image on a window').disable();
+fetch('./glass/manifest.json').then((r) => (r.ok ? r.json() : manifest)).then((m) => {
+  manifest = m?.sets ? m : { sets: {} };
+  const names = Object.keys(manifest.sets);
+  artDropdown = artDropdown.options(['procedural', ...names]).name('art set').onChange(applyArtSet);
+  const want = state.art === 'auto' ? (m.default ?? names[0]) : state.art;
+  if (want && manifest.sets[want]) { artCtl.set = want; artDropdown.updateDisplay(); return applyArtSet(want); }
+}).catch((e) => console.warn('glass manifest:', e.message)).finally(() => { window.__artReady = true; });
+
+// Which image slot (window group) is under a screen point?
+const raycaster = new THREE.Raycaster();
+raycaster.layers.set(1);
+function slotAt(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), camera);
+  const hit = raycaster.intersectObjects(group.children.filter((m) => m.name.startsWith('glass-')), false)[0];
+  if (!hit) return null;
+  const wall = WALLS.find((w) => 'glass-' + w.name === hit.object.name);
+  const u = wall.band.u0 + hit.uv.x * wall.band.w, v = wall.band.v0 + hit.uv.y * wall.band.h;
+  let best = null, bd = Infinity;
+  for (const g of wall.groups) {
+    const dx = Math.max(g.rect.u0 - u, 0, u - g.rect.u1), dy = Math.max(g.rect.v0 - v, 0, v - g.rect.v1);
+    const d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = g; }
+  }
+  return best && { wall, group: best };
+}
+async function setSlotImage(slotId, src) {
+  const wall = WALLS.find((w) => w.groups.some((g) => g.id === slotId));
+  if (!wall) throw new Error('unknown slot ' + slotId);
+  if (src) glassImages.set(slotId, await loadImage(src)); else glassImages.delete(slotId);
+  repaint([wall]);
+}
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/'));
+  const slot = file && slotAt(e.clientX, e.clientY);
+  if (!slot) return;
+  const url = URL.createObjectURL(file);
+  try { await setSlotImage(slot.group.id, url); } finally { URL.revokeObjectURL(url); }
+});
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -205,4 +288,4 @@ applyLighting();
 frame();
 
 // hooks for automation / debugging
-window.__sg = { state, applyLighting, setView, camera, controls, pipeline, lightU, renderer };
+window.__sg = { state, applyLighting, setView, camera, controls, pipeline, lightU, renderer, setSlotImage, applyArtSet, slotAt };

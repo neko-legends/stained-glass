@@ -9,8 +9,8 @@
     html, body { margin: 0; height: 100%; background: #050505; overflow: hidden; font-family: ui-sans-serif, system-ui, sans-serif; color: #f1e9d8; }
     canvas#view { display: block; width: 100vw; height: 100vh; touch-action: none; }
     #bar {
-      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-      width: min(880px, calc(100vw - 32px)); box-sizing: border-box;
+      position: fixed; z-index: 20; left: 16px; right: 16px; bottom: 18px; margin: 0 auto;
+      max-width: 880px; box-sizing: border-box;
       display: flex; align-items: center; gap: 14px; padding: 10px 16px;
       background: rgba(12, 10, 14, 0.62); backdrop-filter: blur(10px);
       border: 1px solid rgba(255, 220, 160, 0.18); border-radius: 14px;
@@ -26,6 +26,8 @@
     #bar button:hover { background: rgba(255, 200, 97, 0.28); }
     #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; letter-spacing: 0.08em; opacity: 0.8; pointer-events: none; }
     #hint { position: fixed; left: 16px; top: 14px; font-size: 12px; opacity: 0.55; pointer-events: none; }
+    /* keep the bar clear of the controls panel on the right */
+    @media (min-width: 760px) { #bar { right: 276px; } }
     @media (max-width: 600px) { #phase, #hint { display: none; } }
   </style>
 </head>

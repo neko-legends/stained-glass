@@ -28,9 +28,11 @@ void main() {
       ws += wgt;
     }
   }
-  vol /= ws;
+  vol /= max(ws, 1e-6);
 
   float ext = exp(-uDensity * 0.6 * min(dist, 120.0));
   vec3 col = scene * ext + uFogColor * (1.0 - ext) + vol * uVolStrength;
+  // last line of defence before bloom: never let NaN / Inf through
+  col = mix(vec3(0.0), clamp(col, 0.0, 400.0), vec3(equal(col, col)));
   gl_FragColor = vec4(col, 1.0);
 }

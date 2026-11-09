@@ -14,9 +14,47 @@ npm run dev
 npm run build    # static site in dist/
 ```
 
-URL parameters: `t` (hour), `day` (day of year), `lat`, `view` (`nave`, `floor`, `south`, `west`, `rose`, `low`), `play=1`, `ui=0`, `ppm` (glass texels per metre, default 128; lower it on weak GPUs), `dpr`.
+URL parameters: `t` (hour), `day` (day of year), `lat`, `heading` (compass bearing the altar faces), `art` (art set name or `procedural`), `view` (`nave`, `floor`, `side`, `entrance`, `rose`, `low`), `play=1`, `ui=0`, `ppm` (glass texels per metre, default 128; lower it on weak GPUs), `dpr`.
 
-`npm run shot -- <outDir> "t=12.5&view=floor" ...` takes headless screenshots (needs the dev server and Chrome).
+`npm run shot -- <outDir> "t=12.5&view=floor" ...` takes headless screenshots (needs the dev server and Chrome). `node tools/motion.mjs` and `node tools/flicker.mjs` drive the camera and fail-check every frame for black or NaN pixels.
+
+## Sun path and orientation
+
+The altar end faces **south** by default (`altar faces` slider, `heading` parameter). The morning sun then comes through the left wall, the midday sun straight through the altar windows down the nave, and the afternoon sun through the right wall, so every window wall gets its turn. Set it to 90 for a traditional east-facing church.
+
+## Your own glass
+
+Any window can show a picture instead of the generated design. Only the colours matter: bright, saturated images with dark outlines work best, because the image *is* the light filter.
+
+- **Drag and drop** an image file onto a window to replace it for the session.
+- **Art sets**: put files in `public/glass/` and list them in `public/glass/manifest.json`, then pick the set in the panel.
+
+```json
+{
+  "default": "neko",
+  "sets": {
+    "neko": {
+      "slots": {
+        "side": ["neko/side-1.webp", "neko/side-2.webp"],
+        "altar-lancets": "neko/altar-lancets.webp",
+        "altar-rose": "neko/altar-rose.webp",
+        "entrance-lancets": "neko/entrance-lancets.webp",
+        "entrance-rose": "neko/entrance-rose.webp"
+      }
+    }
+  }
+}
+```
+
+| Slot | Covers | Shape (w × h) |
+| --- | --- | --- |
+| `right-1` … `right-6`, `left-1` … `left-6` | one side bay: two lancets and the oculus above | 5.3 × 13.2 m, about 2:5 |
+| `side` | list of images cycled over all twelve side bays | same |
+| `altar-lancets` | the row of five lancets | 9.8 × 9.1 m, about 1:1 |
+| `altar-rose`, `entrance-rose` | rose window | 1:1 |
+| `entrance-lancets` | the row of four lancets | 7.5 × 5.5 m, about 4:3 |
+
+Images are scaled to cover the slot and cut by the stone, so one picture spans a whole group of openings.
 
 ## How the light works
 
@@ -38,7 +76,7 @@ E(P) = E_sun · shadow(P) · Π T_wall( hit(P, L) )
 
 **The windows themselves.** Seen from inside, glass shows `T · (sky + scattered sun)`, brighter toward the sun. The same function drives the glossy floor reflections (reflection ray against the wall planes, blur by roughness) and a soft coloured fill light from each wall, with no extra render passes.
 
-**Sun and moon.** `src/sun.js` computes solar position from time, day of year and latitude; the nave is oriented west to east. Air mass reddens the beam near the horizon. A full moon sits opposite the sun and takes over at night, with the exposure opening up.
+**Sun and moon.** `src/sun.js` computes solar position from time, day of year and latitude; `main.js` rotates it into the building's frame. Air mass reddens the beam near the horizon. A full moon sits opposite the sun and takes over at night, with the exposure opening up.
 
 ## Files
 

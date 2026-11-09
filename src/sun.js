@@ -1,7 +1,6 @@
 // Sun / moon ephemeris (simplified) and atmosphere colour model.
-// World frame: +X = east, +Y = up, +Z = south. The nave runs west -> east,
-// so the altar window faces sunrise, the south wall takes the midday sun and
-// the west rose takes the evening sun, like a real oriented church.
+// Output frame: +X = east, +Y = up, +Z = south (compass). main.js rotates the
+// result into the building's frame according to which way the altar faces.
 import * as THREE from 'three';
 
 const DEG = Math.PI / 180;

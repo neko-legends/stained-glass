@@ -46,7 +46,8 @@ vec2 blocks(vec2 p, vec2 size) {
 
 void main() {
   vec3 P = vWorldPos;
-  vec3 N = normalize(vWorldNormal);
+  // degenerate triangles can carry a zero normal; normalize() would give NaN
+  vec3 N = dot(vWorldNormal, vWorldNormal) > 1e-12 ? normalize(vWorldNormal) : vec3(0.0, 1.0, 0.0);
   if (!gl_FrontFacing) N = -N;
   vec3 V = normalize(cameraPosition - P);
 
@@ -107,7 +108,7 @@ void main() {
 
   // --- specular -----------------------------------------------------------
   vec3 F0 = mix(vec3(0.04), albedo, uMetal);
-  float nv = max(dot(N, V), 1e-3);
+  float nv = clamp(dot(N, V), 1e-3, 1.0); // > 1 by rounding would make pow() below return NaN
   vec3 F = F0 + (max(vec3(1.0 - rough), F0) - F0) * pow(1.0 - nv, 5.0);
   vec3 R = reflect(-V, N);
   vec3 env = glassReflection(P, R, rough, 0.3) * uReflStrength;
@@ -115,12 +116,16 @@ void main() {
   vec3 spec = F * env * specOcc;
 
   // sun glint (GGX)
-  vec3 Hh = normalize(L + V);
-  float nh = max(dot(N, Hh), 0.0);
+  vec3 Hh = L + V;
+  Hh = dot(Hh, Hh) > 1e-12 ? normalize(Hh) : N;
+  float nh = clamp(dot(N, Hh), 0.0, 1.0);
   float a2 = rough * rough; a2 *= a2;
   float dd = nh * nh * (a2 - 1.0) + 1.0;
-  float D = a2 / (PI * dd * dd);
+  float D = a2 / max(PI * dd * dd, 1e-7);
   spec += sunE * max(ndl, 0.0) * F * min(D * 0.25, 4.0) * specOcc;
 
-  gl_FragColor = vec4(diffuse + spec + uEmissive, 1.0);
+  vec3 col = diffuse + spec + uEmissive;
+  // one NaN pixel would be smeared over the whole frame by the bloom blur
+  col = mix(vec3(0.0), clamp(col, 0.0, 400.0), vec3(equal(col, col)));
+  gl_FragColor = vec4(col, 1.0);
 }

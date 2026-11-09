@@ -5,8 +5,8 @@
 import * as THREE from 'three';
 
 export const DIM = {
-  L: 48,          // inner length (x: -24 .. 24), west -> east
-  W: 16,          // inner width  (z: -8 .. 8),  north -> south
+  L: 48,          // inner length (x: -24 .. 24), entrance -> altar
+  W: 16,          // inner width  (z: -8 .. 8),  left wall -> right wall (facing the altar)
   wallT: 1.2,     // wall thickness
   wallH: 28.5,
   bays: 6,
@@ -59,36 +59,34 @@ function westOpenings() {
 
 export const WALLS = [
   {
-    name: 'south', seed: 11,
+    name: 'right', seed: 11,
     origin: new THREE.Vector3(-L / 2 - wallT, 0, W / 2), U: X.clone(), V: Y.clone(),
     width: L + 2 * wallT, height: DIM.wallH,
     openings: sideOpenings(),
   },
   {
-    name: 'north', seed: 23,
+    name: 'left', seed: 23,
     origin: new THREE.Vector3(L / 2 + wallT, 0, -W / 2), U: X.clone().negate(), V: Y.clone(),
     width: L + 2 * wallT, height: DIM.wallH,
     openings: sideOpenings(),
   },
   {
-    name: 'east', seed: 37,
+    name: 'altar', seed: 37,
     origin: new THREE.Vector3(L / 2, 0, W / 2), U: Z.clone().negate(), V: Y.clone(),
     width: W, height: DIM.wallH,
     openings: eastOpenings(),
   },
   {
-    name: 'west', seed: 53,
+    name: 'entrance', seed: 53,
     origin: new THREE.Vector3(-L / 2, 0, -W / 2), U: Z.clone(), V: Y.clone(),
     width: W, height: DIM.wallH,
     openings: westOpenings(),
   },
 ];
 
-for (const w of WALLS) {
-  w.N = new THREE.Vector3().crossVectors(w.U, w.V); // outward
-  // Glass band: the sub-rectangle of the wall that one texture covers.
+function bounds(openings) {
   let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-  for (const o of w.openings) {
+  for (const o of openings) {
     if (o.type === 'lancet') {
       u0 = Math.min(u0, o.u); u1 = Math.max(u1, o.u + o.w);
       v0 = Math.min(v0, o.v0); v1 = Math.max(v1, o.vs + o.w * 0.8661);
@@ -97,6 +95,22 @@ for (const w of WALLS) {
       v0 = Math.min(v0, o.cv - o.r); v1 = Math.max(v1, o.cv + o.r);
     }
   }
+  return { u0, u1, v0, v1 };
+}
+
+for (const w of WALLS) {
+  w.N = new THREE.Vector3().crossVectors(w.U, w.V); // outward
+  // Image slots: groups of openings that one picture can be stretched across
+  // (a side bay = two lancets + oculus; the lancet row; the rose).
+  const sets = new Map();
+  for (const o of w.openings) {
+    const id = o.bay !== undefined ? `${w.name}-${o.bay + 1}` : `${w.name}-${o.rose ? 'rose' : 'lancets'}`;
+    if (!sets.has(id)) sets.set(id, []);
+    sets.get(id).push(o);
+  }
+  w.groups = [...sets].map(([id, openings]) => ({ id, openings, rect: bounds(openings) }));
+  // Glass band: the sub-rectangle of the wall that one texture covers.
+  const { u0, u1, v0, v1 } = bounds(w.openings);
   const pad = 0.25;
   w.band = { u0: u0 - pad, u1: u1 + pad, v0: v0 - pad, v1: v1 + pad };
   w.band.w = w.band.u1 - w.band.u0;

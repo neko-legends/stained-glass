@@ -17,5 +17,6 @@ void main() {
   } else {
     col = T * 0.03 + uSkyColor * 0.05; // from outside: dark, slightly reflective
   }
+  col = mix(vec3(0.0), clamp(col, 0.0, 400.0), vec3(equal(col, col)));
   gl_FragColor = vec4(col, 1.0);
 }

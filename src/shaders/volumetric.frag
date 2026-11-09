@@ -25,7 +25,7 @@ void main() {
 
   float mu = dot(dir, uLightDir);
   float g = uAniso;
-  float hg = (1.0 - g * g) / (4.0 * PI * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
+  float hg = (1.0 - g * g) / (4.0 * PI * pow(max(1.0 + g * g - 2.0 * g * mu, 1e-4), 1.5));
   float phase = mix(1.0 / (4.0 * PI), min(hg, 0.35), 0.6);
 
   float j = ign(gl_FragCoord.xy + uFrame * 5.588);

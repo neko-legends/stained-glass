@@ -19,7 +19,8 @@ page.on('console', (m) => { if (['error', 'warning'].includes(m.type())) console
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 for (const qs of queries.length ? queries : ['t=9.5']) {
   await page.goto(`${base}?dpr=1&${qs}`, { waitUntil: 'load' });
-  await page.waitForFunction('window.__ready === true', { timeout: 60000 });
+  await page.waitForFunction('window.__ready === true && window.__artReady === true', { timeout: 60000 });
+  if (process.env.SG_EVAL) await page.evaluate(process.env.SG_EVAL);
   await new Promise((r) => setTimeout(r, 400));
   const name = qs.replace(/[^a-z0-9.]+/gi, '_');
   await page.screenshot({ path: `${outDir}/${name}.png` });
