@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stained Glass</title>
+  <link rel="icon" href="data:," />
+  <style>
+    html, body { margin: 0; height: 100%; background: #050505; overflow: hidden; font-family: ui-sans-serif, system-ui, sans-serif; color: #f1e9d8; }
+    canvas#view { display: block; width: 100vw; height: 100vh; touch-action: none; }
+    #bar {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+      width: min(880px, calc(100vw - 32px)); box-sizing: border-box;
+      display: flex; align-items: center; gap: 14px; padding: 10px 16px;
+      background: rgba(12, 10, 14, 0.62); backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 220, 160, 0.18); border-radius: 14px;
+    }
+    #orb { width: 26px; height: 26px; border-radius: 50%; flex: none; }
+    #clock { font-variant-numeric: tabular-nums; font-size: 18px; min-width: 56px; }
+    #phase { font-size: 12px; opacity: 0.7; min-width: 78px; }
+    #time { flex: 1; accent-color: #ffc861; height: 22px; min-width: 0; }
+    #bar button {
+      flex: none; background: rgba(255, 200, 97, 0.14); color: inherit; border: 1px solid rgba(255, 220, 160, 0.3);
+      border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+    }
+    #bar button:hover { background: rgba(255, 200, 97, 0.28); }
+    #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; letter-spacing: 0.08em; opacity: 0.8; pointer-events: none; }
+    #hint { position: fixed; left: 16px; top: 14px; font-size: 12px; opacity: 0.55; pointer-events: none; }
+    @media (max-width: 600px) { #phase, #hint { display: none; } }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="loading">Leading the glass…</div>
+  <div id="hint">drag to look · scroll to move · right-drag to pan</div>
+  <div id="bar">
+    <div id="orb"></div>
+    <div><div id="clock">09:30</div><div id="phase">morning</div></div>
+    <input id="time" type="range" min="0" max="24" step="0.01" value="9.5" aria-label="Time of day" />
+    <button id="play" type="button">Play</button>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
