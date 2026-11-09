@@ -1,8 +1,10 @@
 // Frame pipeline:
 //   1. sun depth map (opaque geometry only; glass is handled analytically)
-//   2. scene -> HDR target with depth
-//   3. half-res volumetric ray-march (god rays through the glass)
-//   4. composite, bloom, tone map
+//      + floor radiosity map for bounce light        [only when the light moves]
+//   2. depth pre-pass -> screen-space ambient occlusion
+//   3. scene -> HDR target with depth (surfaces read the AO and bounce maps)
+//   4. half-res volumetric ray-march (god rays through the glass)
+//   5. composite, bloom, tone map
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
@@ -11,26 +13,54 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import fsVert from './shaders/fullscreen.vert?raw';
 import volFrag from './shaders/volumetric.frag?raw';
 import compFrag from './shaders/composite.frag?raw';
+import aoFrag from './shaders/ao.frag?raw';
+import aoBlurFrag from './shaders/aoBlur.frag?raw';
+import bounceFrag from './shaders/bounce.frag?raw';
 import { withGlassLight } from './materials.js';
 import { DIM } from './layout.js';
 
 const SHADOW_SIZE = 4096;
+const BOUNCE_TEXEL = 0.25; // floor metres per texel of the radiosity map
 
 class ScenePass extends Pass {
   constructor(pipe) { super(); this.pipe = pipe; this.needsSwap = true; }
   render(renderer, writeBuffer) {
     const p = this.pipe;
+    const cam = p.camera;
+
+    // depth pre-pass (no transparent / additive objects)
+    const prevOverride = p.scene.overrideMaterial;
+    for (const o of p.noDepth) o.visible = false;
+    p.scene.overrideMaterial = p.depthMat;
+    renderer.setRenderTarget(p.preRT);
+    renderer.clear();
+    renderer.render(p.scene, cam);
+    p.scene.overrideMaterial = prevOverride;
+    for (const o of p.noDepth) o.visible = true;
+
+    // ambient occlusion
+    p.aoMat.uniforms.uProj.value.copy(cam.projectionMatrix);
+    p.aoMat.uniforms.uInvProj.value.copy(cam.projectionMatrixInverse);
+    renderer.setRenderTarget(p.aoRT);
+    p.aoQuad.render(renderer);
+    p.aoBlurMat.uniforms.uNear.value = cam.near;
+    p.aoBlurMat.uniforms.uFar.value = cam.far;
+    renderer.setRenderTarget(p.aoBlurRT);
+    p.aoBlurQuad.render(renderer);
+
+    // scene
     renderer.setRenderTarget(p.sceneRT);
     renderer.clear();
-    renderer.render(p.scene, p.camera);
+    renderer.render(p.scene, cam);
 
-    p.invViewProj.multiplyMatrices(p.camera.projectionMatrix, p.camera.matrixWorldInverse).invert();
-    p.volMat.uniforms.uCamPos.value.copy(p.camera.position);
+    // god rays
+    p.invViewProj.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
+    p.volMat.uniforms.uCamPos.value.copy(cam.position);
     p.volMat.uniforms.uFrame.value = (p.volMat.uniforms.uFrame.value + 1) % 64;
     renderer.setRenderTarget(p.volRT);
     p.volQuad.render(renderer);
 
-    p.compMat.uniforms.uCamPos.value.copy(p.camera.position);
+    p.compMat.uniforms.uCamPos.value.copy(cam.position);
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
     p.compQuad.render(renderer);
   }
@@ -41,6 +71,7 @@ export class Pipeline {
     this.renderer = renderer; this.scene = scene; this.camera = camera; this.lightU = lightU;
     this.invViewProj = new THREE.Matrix4();
     this.shadowDirty = true;
+    this.noDepth = []; // objects skipped by the depth pre-pass (dust)
 
     // --- sun depth map ---
     this.shadowRT = new THREE.WebGLRenderTarget(SHADOW_SIZE, SHADOW_SIZE, {
@@ -57,8 +88,45 @@ export class Pipeline {
     lightU.uShadowMap.value = this.shadowRT.depthTexture;
     lightU.uShadowTexel.value.set(1 / SHADOW_SIZE, 1 / SHADOW_SIZE);
 
-    // --- scene target ---
+    // --- floor radiosity (one-bounce light) ---
+    this.bounceRT = new THREE.WebGLRenderTarget(Math.round(DIM.L / BOUNCE_TEXEL), Math.round(DIM.W / BOUNCE_TEXEL), {
+      type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+    });
+    this.bounceMat = new THREE.ShaderMaterial({
+      uniforms: { ...lightU, uTexel: { value: new THREE.Vector2(BOUNCE_TEXEL, BOUNCE_TEXEL) }, uFloorAlbedo: { value: 0.34 } },
+      vertexShader: fsVert, fragmentShader: withGlassLight(bounceFrag), depthTest: false, depthWrite: false,
+    });
+    this.bounceQuad = new FullScreenQuad(this.bounceMat);
+    lightU.uBounceMap.value = this.bounceRT.texture;
+    lightU.uBounceTexel.value = BOUNCE_TEXEL;
+
+    // --- depth pre-pass + AO ---
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    this.preRT = new THREE.WebGLRenderTarget(size.x, size.y, { depthTexture: new THREE.DepthTexture(size.x, size.y, THREE.UnsignedIntType) });
+    this.preRT.depthTexture.minFilter = this.preRT.depthTexture.magFilter = THREE.NearestFilter;
+    const aoOpts = { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
+    this.aoRT = new THREE.WebGLRenderTarget(size.x, size.y, aoOpts);
+    this.aoBlurRT = new THREE.WebGLRenderTarget(size.x, size.y, aoOpts);
+    this.aoMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tDepth: { value: this.preRT.depthTexture }, uProj: { value: new THREE.Matrix4() }, uInvProj: { value: new THREE.Matrix4() },
+        uRes: { value: new THREE.Vector2(size.x, size.y) }, uRadius: { value: 1.1 },
+      },
+      vertexShader: fsVert, fragmentShader: aoFrag, depthTest: false, depthWrite: false,
+    });
+    this.aoQuad = new FullScreenQuad(this.aoMat);
+    this.aoBlurMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tAO: { value: this.aoRT.texture }, tDepth: { value: this.preRT.depthTexture },
+        uRes: { value: new THREE.Vector2(size.x, size.y) }, uNear: { value: 0.2 }, uFar: { value: 120 },
+      },
+      vertexShader: fsVert, fragmentShader: aoBlurFrag, depthTest: false, depthWrite: false,
+    });
+    this.aoBlurQuad = new FullScreenQuad(this.aoBlurMat);
+    lightU.uAO.value = this.aoBlurRT.texture;
+
+    // --- scene target ---
     this.sceneRT = new THREE.WebGLRenderTarget(size.x, size.y, {
       type: THREE.HalfFloatType, samples: opts.samples ?? 4,
       depthTexture: new THREE.DepthTexture(size.x, size.y, THREE.UnsignedIntType),
@@ -75,6 +143,7 @@ export class Pipeline {
         uAniso: { value: 0.45 },
         uMaxDist: { value: 70 },
         uFrame: { value: 0 },
+        uHazeVariation: { value: 0.7 },
       },
       defines: { VOL_STEPS: opts.volSteps ?? 48 },
       vertexShader: fsVert, fragmentShader: withGlassLight(volFrag),
@@ -111,6 +180,12 @@ export class Pipeline {
     const r = this.renderer;
     const size = r.getDrawingBufferSize(new THREE.Vector2());
     this.sceneRT.setSize(size.x, size.y);
+    this.preRT.setSize(size.x, size.y);
+    this.aoRT.setSize(size.x, size.y);
+    this.aoBlurRT.setSize(size.x, size.y);
+    this.aoMat.uniforms.uRes.value.set(size.x, size.y);
+    this.aoBlurMat.uniforms.uRes.value.set(size.x, size.y);
+    this.lightU.uInvRes.value.set(1 / size.x, 1 / size.y);
     const vw = Math.max(1, size.x >> 1), vh = Math.max(1, size.y >> 1);
     this.volRT.setSize(vw, vh);
     this.compMat.uniforms.uVolTexel.value.set(1 / vw, 1 / vh);
@@ -154,6 +229,10 @@ export class Pipeline {
     r.clear();
     r.render(this.scene, cam);
     this.scene.overrideMaterial = prev;
+
+    // the floor's share of that light, for bounce
+    r.setRenderTarget(this.bounceRT);
+    this.bounceQuad.render(r);
     r.setRenderTarget(null);
     this.shadowDirty = false;
   }

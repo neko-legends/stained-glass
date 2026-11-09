@@ -78,6 +78,19 @@ E(P) = E_sun · shadow(P) · Π T_wall( hit(P, L) )
 
 **Sun and moon.** `src/sun.js` computes solar position from time, day of year and latitude; `main.js` rotates it into the building's frame. Air mass reddens the beam near the horizon. A full moon sits opposite the sun and takes over at night, with the exposure opening up.
 
+## Realism passes
+
+- **Ambient occlusion**: a depth pre-pass feeds a screen-space AO pass (normals rebuilt from depth, 16 samples, depth-aware blur). Surfaces apply it to indirect light only, so sun patches and glass stay clean.
+- **Bounce light**: the sunlit floor's radiosity is rendered into a small mip-mapped texture whenever the light moves. A surface at height `h` reads the mip whose footprint is about `2h`, which approximates the patch of floor it sees, so a red patch glows red onto the nearest pier.
+- **Dust motes**: 9,000 points that run the same `shadow · glass` lookup in the vertex shader. They are invisible in shade and sparkle in the colour of the beam they drift through.
+- **Drifting haze**: the ray-march multiplies density by slow 3D noise, so shafts have moving structure.
+- **Glass ripple**: the projected light is mottled and streaked like hand-blown glass, fading with distance by the same cone that blurs the picture.
+- **Stone relief**: joints, chipped edges and dished floor slabs become normals from a procedural height field; the centre aisle is worn smoother.
+- **Marble translucency**: the sun depth map gives the thickness of solid between a point and the light, so thin parts of the statue (wing edges, fingers) glow when backlit.
+- **Candle flicker**: flame brightness and its warm light vary over time.
+
+Each has a slider under `Room`, `Air` or `Glass & light`. `freeze=<seconds>` in the URL pins the animation clock for reproducible screenshots.
+
 ## Window shapes
 
 The pane rectangle only carries the texture; it does not define the window. A window's shape comes from two things that always agree because both are generated from `src/layout.js`: the hole cut in the wall (which the sun depth map sees) and black in the glass texture (which blocks light exactly like lead). Openings can be `lancet`, `circle` or `poly` (any closed polygon; the small cat-head windows above the side lancets are polygons). A picture with an alpha channel also works: transparent pixels become opaque, so the image can carry its own outline.
@@ -96,7 +109,8 @@ The pane rectangle only carries the texture; it does not define the window. A wi
 | `src/shaders/glassLight.glsl` | The light-transport core shared by all shaders |
 | `src/shaders/surface.frag` | Stone, floor, wood and gilding |
 | `src/shaders/volumetric.frag`, `composite.frag` | God rays |
-| `src/pipeline.js` | Sun depth map, HDR scene, rays, bloom, tone map |
+| `src/shaders/ao.frag`, `aoBlur.frag`, `bounce.frag`, `dust.vert` | Ambient occlusion, floor radiosity, dust motes |
+| `src/pipeline.js` | Sun depth map, floor radiosity, depth pre-pass and AO, HDR scene, rays, bloom, tone map |
 | `src/sun.js` | Sun and moon position, sky colour |
 
 ## Phase 2: Unity URP 6
@@ -107,4 +121,5 @@ The model was chosen to port directly:
 - URP's main-light shadow map replaces the custom sun depth map. Glass renderers have shadow casting off.
 - Surfaces call `glassTransmit` to tint the main light: a custom lit shader, or a Shader Graph custom function node.
 - God rays become a full-screen pass in a `ScriptableRendererFeature` reading the camera depth texture.
+- AO maps to URP's SSAO feature; the floor radiosity map is a small `Graphics.Blit` whenever the sun moves; dust is a VFX Graph or a point mesh using the same include.
 - Pane textures can be painted art instead of the procedural canvases; only RGB transmittance matters.

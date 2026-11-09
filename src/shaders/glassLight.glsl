@@ -31,6 +31,8 @@ uniform vec3 uLightColor;    // irradiance of the key light
 uniform float uLightSpread;  // angular diameter of the light (radians) + glass diffusion
 uniform vec3 uSkyColor;      // sky radiance behind the glass
 uniform float uGlassScatter; // how much direct sun the glass scatters toward the viewer
+uniform float uGlassRipple;  // strength of the mottling hand-blown glass puts in its projection
+uniform float uTime;
 
 uniform sampler2D uShadowMap;
 uniform mat4 uShadowMatrix;  // world -> shadow uv/depth (0..1)
@@ -43,6 +45,18 @@ const float PI = 3.14159265;
 
 float ign(vec2 p) { // interleaved gradient noise
   return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+
+float glHash(vec2 p) {
+  p = fract(p * vec2(443.897, 441.423));
+  p += dot(p, p.yx + 19.19);
+  return fract((p.x + p.y) * p.x);
+}
+float glNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(glHash(i), glHash(i + vec2(1.0, 0.0)), f.x),
+             mix(glHash(i + vec2(0.0, 1.0)), glHash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 
 // Intersect the ray P + t*D with pane i. Returns t (<0 = miss) and uv.
@@ -82,7 +96,19 @@ vec3 paneTransmit1(sampler2D tex, int i, vec3 P, vec3 D, float rot, const int qu
   vec2 uv;
   float t = paneHit(i, P, D, uv);
   if (t < 0.0) return vec3(1.0);
-  return paneBlur(tex, i, uv, t * uLightSpread, rot, quality);
+  float width = t * uLightSpread;
+  vec3 T = paneBlur(tex, i, uv, width, rot, quality);
+  if (quality == 1 && uGlassRipple > 0.0) {
+    // Mouth-blown glass is never flat: ripples, reams and seeds act as weak
+    // lenses, so the projected colour is mottled and streaked. The mottling
+    // is blurred by the same cone as the picture, so it fades with distance.
+    vec2 m = uv / vec2(length(uPaneU[i]), length(uPaneV[i])); // metres on the pane
+    float blotch = glNoise(m * 9.0) + 0.5 * glNoise(m * 23.0);
+    float ream = glNoise(vec2(m.x * 34.0 + 3.0 * glNoise(m * 2.0), m.y * 2.5));
+    float fade = clamp(0.09 / (width + 0.03), 0.0, 1.0);
+    T *= 1.0 + uGlassRipple * fade * (0.9 * (blotch - 0.75) + 0.8 * (ream - 0.5));
+  }
+  return T;
 }
 
 // Colour filter applied to the key light on its way to P.

@@ -8,6 +8,7 @@ import { createLightUniforms, createMaterials } from './materials.js';
 import { buildCathedral } from './cathedral.js';
 import { Pipeline } from './pipeline.js';
 import { computeSky } from './sun.js';
+import { createDust } from './dust.js';
 
 const q = new URLSearchParams(location.search);
 const num = (k, d) => (q.has(k) && !Number.isNaN(parseFloat(q.get(k))) ? parseFloat(q.get(k)) : d);
@@ -36,6 +37,13 @@ const state = {
   bloomThreshold: 1.0,
   raySteps: 48,
   candles: 1.0,
+  ao: 1.0,
+  bounce: 1.0,
+  dust: 1.5,
+  dustSize: 1.0,
+  hazeVariation: 0.7,
+  glassRipple: 0.6,
+  relief: 1.0,
 };
 
 const canvas = document.getElementById('view');
@@ -109,6 +117,9 @@ function setView(name) {
 setView(q.get('view') ?? 'nave');
 
 const pipeline = new Pipeline(renderer, scene, camera, lightU, { volSteps: state.raySteps });
+const dust = createDust(lightU, Math.round(num('motes', 9000)));
+scene.add(dust);
+pipeline.noDepth.push(dust);
 
 // --- lighting state -> uniforms ----------------------------------------------
 const SUN_ANGULAR_DIAMETER = 0.0093; // radians
@@ -138,12 +149,19 @@ function applyLighting() {
   lightU.uLightSpread.value = SUN_ANGULAR_DIAMETER * state.softness;
   lightU.uSkyColor.value.copy(sky.sky).multiplyScalar(state.skyIntensity);
   lightU.uAmbient.value.copy(sky.sky).multiplyScalar(0.03 * state.skyIntensity).addScalar(0.0015);
-  lightU.uBounce.value.copy(lightU.uLightColor.value).multiply(new THREE.Color(0.9, 0.62, 0.7)).multiplyScalar(0.012 * Math.max(sky.dir.y, 0.05));
+  // residual multi-bounce fill (the first bounce off the floor is computed, see bounce.frag)
+  lightU.uBounce.value.copy(lightU.uLightColor.value).multiply(new THREE.Color(0.9, 0.62, 0.7)).multiplyScalar(0.004 * Math.max(sky.dir.y, 0.05));
+  lightU.uAOStrength.value = state.ao;
+  lightU.uBounceStrength.value = state.bounce;
+  lightU.uGlassRipple.value = state.glassRipple;
+  lightU.uBump.value = state.relief;
+  dust.visible = state.dust > 0;
+  dust.material.uniforms.uDustBrightness.value = state.dust;
+  dust.material.uniforms.uDustSize.value = 0.011 * state.dustSize;
+  pipeline.volMat.uniforms.uHazeVariation.value = state.hazeVariation;
   lightU.uGlowStrength.value = state.glow;
   lightU.uReflStrength.value = state.reflections;
   lightU.uFloorPolish.value = state.floorPolish;
-  lightU.uCandleColor.value.setRGB(0.5, 0.26, 0.08).multiplyScalar(state.candles);
-  materials.flame.uniforms.uEmissive.value.setRGB(9, 4.2, 1.1).multiplyScalar(Math.min(state.candles, 1));
 
   pipeline.volMat.uniforms.uDensity.value = state.haze;
   pipeline.compMat.uniforms.uVolStrength.value = state.rays;
@@ -193,10 +211,18 @@ fGlass.add(lightU.uGlassScatter, 'value', 0, 0.3, 0.005).name('glass scatter');
 fGlass.add(state, 'glow', 0, 3, 0.05).name('window glow').onChange(applyLighting);
 fGlass.add(state, 'reflections', 0, 3, 0.05).onChange(applyLighting);
 fGlass.add(state, 'floorPolish', 0, 1, 0.01).name('floor polish').onChange(applyLighting);
-fGlass.add(state, 'candles', 0, 3, 0.05).onChange(applyLighting);
+fGlass.add(state, 'candles', 0, 3, 0.05);
+fGlass.add(state, 'glassRipple', 0, 2, 0.05).name('glass ripple').onChange(applyLighting);
+const fRoom = gui.addFolder('Room');
+fRoom.add(state, 'ao', 0, 2.5, 0.05).name('ambient occlusion').onChange(applyLighting);
+fRoom.add(state, 'bounce', 0, 4, 0.05).name('bounce light').onChange(applyLighting);
+fRoom.add(state, 'relief', 0, 3, 0.05).name('stone relief').onChange(applyLighting);
+fRoom.add(state, 'dust', 0, 4, 0.05).name('dust motes').onChange(applyLighting);
+fRoom.add(state, 'dustSize', 0.3, 3, 0.05).name('mote size').onChange(applyLighting);
 const fAir = gui.addFolder('Air');
 fAir.add(state, 'haze', 0, 0.06, 0.001).name('haze density').onChange(applyLighting);
 fAir.add(state, 'rays', 0, 4, 0.05).name('ray strength').onChange(applyLighting);
+fAir.add(state, 'hazeVariation', 0, 1, 0.01).name('haze drift').onChange(applyLighting);
 fAir.add(pipeline.volMat.uniforms.uAniso, 'value', 0, 0.9, 0.01).name('forward scatter');
 fAir.add(state, 'raySteps', [16, 32, 48, 64, 96]).name('ray steps').onChange((v) => pipeline.setVolSteps(v));
 const fBloom = gui.addFolder('Bloom');
@@ -320,6 +346,13 @@ function frame() {
   const dt = Math.min((now - lastT) / 1000, 0.1);
   lastT = now;
   if (state.playing) { state.time = (state.time + dt * state.speed) % 24; applyLighting(); }
+  // time-driven effects: drifting haze and dust, candle flicker
+  const tsec = q.has('freeze') ? num('freeze', 0) : now / 1000;
+  lightU.uTime.value = tsec;
+  const fl = 0.82 + 0.1 * Math.sin(tsec * 9.1) + 0.06 * Math.sin(tsec * 23.7 + 1.3) + 0.05 * Math.sin(tsec * 4.3 + 0.4) + 0.04 * Math.sin(tsec * 51.0);
+  lightU.uCandleColor.value.setRGB(0.5, 0.26, 0.08).multiplyScalar(state.candles * fl);
+  materials.flame.uniforms.uEmissive.value.setRGB(9, 4.2, 1.1).multiplyScalar(Math.min(state.candles, 1) * (0.75 + 0.3 * fl));
+  dust.material.uniforms.uPixelsPerRad.value = renderer.domElement.height / THREE.MathUtils.degToRad(camera.fov);
   controls.update();
   // keep the visitor inside the building
   camera.position.x = THREE.MathUtils.clamp(camera.position.x, -lim.x, lim.x);
@@ -333,4 +366,4 @@ applyLighting();
 frame();
 
 // hooks for automation / debugging
-window.__sg = { state, applyLighting, setView, camera, controls, pipeline, lightU, renderer, setSlotImage, applyArtSet, slotAt };
+window.__sg = { state, applyLighting, setView, camera, controls, pipeline, lightU, renderer, setSlotImage, applyArtSet, slotAt, dust };

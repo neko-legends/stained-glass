@@ -4,7 +4,7 @@ import surfaceVert from './shaders/surface.vert?raw';
 import surfaceFrag from './shaders/surface.frag?raw';
 import glassVert from './shaders/glass.vert?raw';
 import glassFrag from './shaders/glass.frag?raw';
-import { WALLS } from './layout.js';
+import { WALLS, DIM } from './layout.js';
 
 export const withGlassLight = (src) => src.replace('#include_glass_light', glassLight);
 
@@ -30,6 +30,8 @@ export function createLightUniforms(textures, ppm) {
     uLightSpread: { value: 0.0093 },
     uSkyColor: { value: new THREE.Color(0.3, 0.5, 1) },
     uGlassScatter: { value: 0.06 },
+    uGlassRipple: { value: 0.6 },
+    uTime: { value: 0 },
     uShadowMap: { value: null },
     uShadowMatrix: { value: new THREE.Matrix4() },
     uShadowTexel: { value: new THREE.Vector2(1 / 4096, 1 / 4096) },
@@ -44,6 +46,16 @@ export function createLightUniforms(textures, ppm) {
     uFloorPolish: { value: 0.75 },
     uCandlePos: { value: new THREE.Vector3(19, 3, 0) },
     uCandleColor: { value: new THREE.Color(0.5, 0.26, 0.08) },
+    // screen-space AO and floor radiosity, filled in by the pipeline
+    uAO: { value: null },
+    uInvRes: { value: new THREE.Vector2(1, 1) },
+    uAOStrength: { value: 1.0 },
+    uBounceMap: { value: null },
+    uFloorMin: { value: new THREE.Vector2(-DIM.L / 2, -DIM.W / 2) },
+    uFloorSize: { value: new THREE.Vector2(DIM.L, DIM.W) },
+    uBounceTexel: { value: 0.25 },
+    uBounceStrength: { value: 1.0 },
+    uBump: { value: 1.0 },
   };
 }
 
@@ -57,6 +69,7 @@ export function createMaterials(lightU, textures) {
         uMetal: { value: metal },
         uPattern: { value: pattern },
         uWrap: { value: extra.wrap ?? 0 },
+        uTranslucency: { value: extra.translucency ?? 0 },
         uEmissive: { value: new THREE.Color(extra.emissive ?? 0x000000) },
       },
       vertexShader: surfaceVert,
@@ -72,7 +85,7 @@ export function createMaterials(lightU, textures) {
     gold: surface(0xd9a441, 0.34, 1, 0),
     cloth: surface(0xe9e2d2, 0.8, 0, 0),
     wood: surface(0x4a2f1b, 0.6, 0, 3),
-    marble: surface(0xd9d5cf, 0.3, 0, 4, { wrap: 0.12 }),
+    marble: surface(0xd9d5cf, 0.3, 0, 4, { wrap: 0.12, translucency: 0.9 }),
     dark: surface(0x1c1814, 0.9, 0, 0),
     flame: surface(0x000000, 1, 0, 0),
   };
