@@ -7,8 +7,10 @@ Stained glass realism in three.js: a procedural gothic hall where sunlight (or m
 ## Run
 
 ```bash
+./run.sh         # installs on first run, serves and opens http://localhost:5173
+# or manually:
 npm install
-npm run dev      # http://localhost:5173
+npm run dev
 npm run build    # static site in dist/
 ```
 
