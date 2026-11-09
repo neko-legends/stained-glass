@@ -1,5 +1,9 @@
 // Procedural gothic hall built from layout.js. Everything is merged into a
 // handful of meshes (one per material).
+//
+// Rule for every part added here: two visible faces must never lie in the same
+// plane where they overlap (they z-fight and flicker as the camera moves).
+// Parts either stop short of each other or sink a few centimetres in.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DIM, WALLS, archHeight, archOffset } from './layout.js';
@@ -81,7 +85,7 @@ export function buildCathedral(materials) {
       return alongX ? box(lu, sy, sd, p.x, p.y, p.z) : box(sd, sy, lu, p.x, p.y, p.z);
     };
     bins.plain.push(wbox(L, 0.35, 0.85, L / 2, 6.17, 0.42));  // string course
-    bins.plain.push(wbox(L, 0.55, 0.95, L / 2, 0.275, 0.47)); // bench
+    bins.plain.push(wbox(L, 0.58, 0.95, L / 2, 0.29, 0.47));  // bench: top sits 3 cm above the arch sills, never level with them
     bins.plain.push(wbox(L, 0.25, 0.5, L / 2, 7.25, 0.2));    // window sill ledge
     for (let b = 0; b < bays; b++) {
       const c = b * bayLen + bayLen / 2;
@@ -90,7 +94,7 @@ export function buildCathedral(materials) {
         const p = at(u, 0.55, 0.72);
         bins.plain.push(cyl(0.12, 0.12, 2.85, p.x, p.y, p.z, 10));
         bins.plain.push(box(0.36, 0.2, 0.36, p.x, 3.4, p.z));
-        bins.plain.push(box(0.34, 0.16, 0.34, p.x, 0.63, p.z));
+        bins.plain.push(box(0.34, 0.16, 0.34, p.x, 0.65, p.z));
       }
     }
     // wall shafts carrying the vault
@@ -98,12 +102,12 @@ export function buildCathedral(materials) {
       const u = i * bayLen;
       const p = at(u, 0, 0.75);
       bins.plain.push(cyl(0.72, 0.8, 1.1, p.x, 0, p.z, 8));
-      bins.plain.push(cyl(0.5, 0.5, S - 1.1, p.x, 1.1, p.z, 18));
+      bins.plain.push(cyl(0.5, 0.5, S - 1.3, p.x, 1.1, p.z, 18));
       bins.plain.push(cyl(0.95, 0.5, 0.75, p.x, S - 0.75, p.z, 18));
       bins.plain.push(box(1.7, 0.22, 1.7, p.x, S + 0.05, p.z));
       for (const s of [-1, 1]) {
         const q = at(u + s * 0.62, 0, 0.42);
-        bins.plain.push(cyl(0.17, 0.17, S - 1.1, q.x, 1.1, q.z, 10));
+        bins.plain.push(cyl(0.17, 0.17, S - 1.14, q.x, 1.0, q.z, 10));
       }
     }
   }
@@ -173,7 +177,7 @@ export function buildCathedral(materials) {
   const dais = 0.66;
   bins.gold.push(box(1.25, 1.1, 3.3, ex - 4.6, dais + 0.55, 0));
   bins.cloth.push(box(1.45, 0.07, 3.6, ex - 4.6, dais + 1.135, 0));
-  bins.cloth.push(box(0.04, 0.5, 3.6, ex - 5.33, dais + 0.92, 0));
+  bins.cloth.push(box(0.04, 0.5, 3.56, ex - 5.345, dais + 0.9, 0));
   // plinth for the statue behind the altar (the statue itself is a GLB loaded in main.js)
   const rx = ex - 2.3;
   bins.plain.push(box(2.6, 0.35, 2.6, rx, dais + 0.175, 0));
@@ -198,9 +202,9 @@ export function buildCathedral(materials) {
   bins.wood.push(box(0.3, 5.2, 3.4, -ex + 0.1, 2.6, 0));
   bins.plain.push(box(0.5, 5.6, 0.45, -ex + 0.2, 2.8, 1.95));
   bins.plain.push(box(0.5, 5.6, 0.45, -ex + 0.2, 2.8, -1.95));
-  bins.plain.push(box(0.5, 0.5, 4.5, -ex + 0.2, 5.6, 0));
-  bins.gold.push(box(0.08, 0.1, 3.4, -ex + 0.27, 1.6, 0));
-  bins.gold.push(box(0.08, 0.1, 3.4, -ex + 0.27, 3.8, 0));
+  bins.plain.push(box(0.58, 0.5, 4.56, -ex + 0.2, 5.62, 0));
+  bins.gold.push(box(0.08, 0.1, 3.36, -ex + 0.27, 1.6, 0));
+  bins.gold.push(box(0.08, 0.1, 3.36, -ex + 0.27, 3.8, 0));
 
   // ---- merge ---------------------------------------------------------------
   const group = new THREE.Group();
@@ -231,5 +235,6 @@ export function buildCathedral(materials) {
     group.add(mesh);
   });
 
-  return { group, flames, statueBase: new THREE.Vector3(rx, dais + 2.07, 0) };
+  // 2 cm into the plinth so the statue's underside is never level with its top
+  return { group, flames, statueBase: new THREE.Vector3(rx, dais + 2.05, 0) };
 }

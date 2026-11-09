@@ -86,7 +86,7 @@ new GLTFLoader().load('./models/angel.glb', (gltf) => {
   window.__statueReady = true;
 }, undefined, (e) => { console.warn('statue:', e.message ?? e); window.__statueReady = true; });
 
-const camera = new THREE.PerspectiveCamera(num('fov', 62), window.innerWidth / window.innerHeight, 0.1, 200);
+const camera = new THREE.PerspectiveCamera(num('fov', 62), window.innerWidth / window.innerHeight, 0.2, 120);
 camera.layers.enable(1);
 const VIEWS = {
   nave: [[-9.5, 1.8, 1.2], [16, 8.5, -0.3]],

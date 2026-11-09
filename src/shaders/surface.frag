@@ -35,6 +35,15 @@ float fbm(vec2 p) {
   return s;
 }
 
+// Joint line that stays stable when it gets thinner than a pixel: widen the
+// edge by the pixel footprint and fade its contrast by the same amount, so
+// distant joints dim smoothly instead of shimmering as the camera moves.
+float jointMask(float edge, float width, vec2 q) {
+  float fw = max(length(dFdx(q)), length(dFdy(q)));
+  float m = smoothstep(0.0, width + fw, edge);
+  return mix(1.0, m, clamp(width / (width + fw * 1.5), 0.0, 1.0));
+}
+
 // Brick-bond block pattern. Returns (edge distance, block id).
 vec2 blocks(vec2 p, vec2 size) {
   float row = floor(p.y / size.y);
@@ -60,14 +69,14 @@ void main() {
     vec3 an = abs(N);
     vec2 q = an.y > 0.75 ? P.xz : (an.x > an.z ? P.zy : P.xy);
     vec2 b = blocks(q, vec2(0.92, 0.46));
-    float mortar = smoothstep(0.0, 0.014, b.x);
+    float mortar = jointMask(b.x, 0.014, q);
     float grain = fbm(q * 3.0) * 0.5 + fbm(q * 19.0) * 0.25;
     albedo *= (0.78 + 0.34 * b.y) * (0.82 + 0.36 * grain) * mix(0.55, 1.0, mortar);
     // old stone darkens toward the floor and in the vault
     albedo *= mix(0.86, 1.0, smoothstep(0.0, 3.0, P.y));
   } else if (uPattern == 2) {
     vec2 b = blocks(P.xz, vec2(1.7, 1.25));
-    float joint = smoothstep(0.0, 0.018, b.x);
+    float joint = jointMask(b.x, 0.018, P.xz);
     float wear = fbm(P.xz * 0.35);
     float grain = fbm(P.xz * 2.5) * 0.6 + fbm(P.xz * 14.0) * 0.3;
     albedo *= (0.72 + 0.4 * b.y) * (0.75 + 0.4 * grain) * mix(0.45, 1.0, joint);
