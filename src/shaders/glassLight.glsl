@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Stained-glass light transport — shared by the surface shader, the glass
-// shader and the volumetric pass. This is the part that ports to Unity/HLSL.
+// shader and the volumetric pass.
 //
 // Every window wall is a "pane": a world-space rectangle with a texture that
 // stores the RGB transmittance of the glass (lead / stone = 0).

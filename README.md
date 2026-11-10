@@ -112,14 +112,3 @@ The pane rectangle only carries the texture; it does not define the window. A wi
 | `src/shaders/ao.frag`, `aoBlur.frag`, `bounce.frag`, `dust.vert` | Ambient occlusion, floor radiosity, dust motes |
 | `src/pipeline.js` | Sun depth map, floor radiosity, depth pre-pass and AO, HDR scene, rays, bloom, tone map |
 | `src/sun.js` | Sun and moon position, sky colour |
-
-## Phase 2: Unity URP 6
-
-The model was chosen to port directly:
-
-- `glassLight.glsl` is plain functions over a few uniforms; it translates to an HLSL include nearly line for line. Pane data (plane, origin, U, V, texture) becomes global shader properties set by a `StainedGlassPane` component.
-- URP's main-light shadow map replaces the custom sun depth map. Glass renderers have shadow casting off.
-- Surfaces call `glassTransmit` to tint the main light: a custom lit shader, or a Shader Graph custom function node.
-- God rays become a full-screen pass in a `ScriptableRendererFeature` reading the camera depth texture.
-- AO maps to URP's SSAO feature; the floor radiosity map is a small `Graphics.Blit` whenever the sun moves; dust is a VFX Graph or a point mesh using the same include.
-- Pane textures can be painted art instead of the procedural canvases; only RGB transmittance matters.
