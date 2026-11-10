@@ -53,7 +53,9 @@ export function computeSky(hours, dayOfYear, latDeg) {
   const horizonFade = smooth(alt, -0.015, 0.06);
   const color = new THREE.Color();
   if (isSun) color.setRGB(ext.x, ext.y, ext.z).multiplyScalar(horizonFade);
-  else color.setRGB(0.55 * ext.x, 0.68 * ext.y, 1.0 * ext.z).multiplyScalar(horizonFade);
+  // Moonlight is sunlight off grey rock: physically near-white (even slightly warm). It only looks
+  // blue to a dark-adapted eye, and film exaggerates that. Keep it pale with a faint cool cast.
+  else color.setRGB(0.9 * ext.x, 0.93 * ext.y, 1.0 * ext.z).multiplyScalar(horizonFade);
 
   // Sky radiance seen through the glass.
   const day = smooth(sunAlt, -0.12, 0.25);
