@@ -41,9 +41,24 @@ for side, cx in (('L', -0.098), ('R', 0.098)):
     r = np.hypot((pu - cu) / a, (pv - cv) / b)
     front = ph > np.median(ph[brown]) - 0.035
     skin = (vcol[:, 0] > 215) & (vcol[:, 1] > 185) & (vcol[:, 2] > 165) & (vcol[:, 0] - vcol[:, 2] < 60)
-    ring = front & (r > 1.2) & (r < 2.3) & skin; inside = front & (r < 1.25)
+    # hair is never touched: strands that hang beside the eye keep their shape and their paint
+    hairv = (vcol[:, 1] - vcol[:, 2] > 36) & (vcol[:, 0] > 170)
+    # ...but the mesh is split along UV seams, so one point can exist as several vertices. A point moves if
+    # ANY of its copies is skin or lash; otherwise a crack would open between the copies.
+    if 'wgroup' not in globals():
+        globals()['wgroup'] = np.unique(np.round(P * 1e5).astype(np.int64), axis=0, return_inverse=True)[1].ravel()
+    nonhair = np.zeros(wgroup.max() + 1, bool); np.logical_or.at(nonhair, wgroup, ~hairv)
+    hairv = ~nonhair[wgroup]
+    ring = front & (r > 1.2) & (r < 2.3) & skin; inside = front & (r < 1.25) & ~hairv
     surf = RBFInterpolator(np.c_[pu[ring], pv[ring]], ph[ring], kernel='thin_plate_spline', smoothing=1e-5)
     hs = surf(np.c_[pu[inside], pv[inside]])
+    # The fitted surface is only trustworthy between its samples. Toward the hairline there is no skin
+    # to sample, and an extrapolated spline can dive far behind the face and tear a hole. So a vertex is
+    # only ever lowered (never raised), and never below the nearest real skin around it.
+    from scipy.spatial import cKDTree
+    _, nn = cKDTree(np.c_[pu[ring], pv[ring]]).query(np.c_[pu[inside], pv[inside]], k=4)
+    floor = ph[ring][nn].mean(1) - 0.003
+    hs = np.minimum(np.maximum(hs, floor), ph[inside])
     w = np.clip((1.25 - r[inside]) / 0.3, 0, 1); w = w * w * (3 - 2 * w)
     P[inside] += np.outer((ph[inside] * (1 - w) + (hs + 0.0006) * w) - ph[inside], d)
     # plain skin tone around this eye (a median: an interpolating surface overshoots toward the hair colour at its rim)
@@ -154,6 +169,9 @@ for t in np.where(cand)[0]:
         q = np.stack([w0[ins], w1[ins], w2[ins]], 1) @ P[[a_, b_, c_]]; qu, qv = q @ u, q @ v
         out = img[ya:yb + 1, xa:xb + 1][ins]
         if mode == 'color':
+            # texels that are hair in the model's own texture (strands painted across the temple and brow) are kept
+            orig = tex[ya:yb + 1, xa:xb + 1][ins].astype(np.float64)
+            keep_hair = np.clip((orig[:, 1] - orig[:, 2] - 30) / 10, 0, 1) * (orig[:, 0] > 170)
             xy = to_img(qu, qv); inb = (xy[:, 0] > 2) & (xy[:, 1] > 2) & (xy[:, 0] < FW - 3) & (xy[:, 1] < FH - 3)
             wt = np.where(inb, bil(soft, xy), 0.0)
             fc = np.stack([w0[ins], w1[ins], w2[ins]], 1) @ vfacing[[a_, b_, c_]]
@@ -163,11 +181,14 @@ for t in np.where(cand)[0]:
             for (cu, cv, a, b, skincol) in eyes:
                 r = np.hypot((qu - cu) / (a * 1.18), (qv - cv) / b); we = np.clip((1.25 - r) / 0.3, 0, 1); we = we * we * (3 - 2 * we)
                 selq = we > 0
+                we = we * (1 - keep_hair)
+                selq = we > 0
                 if selq.any(): out[selq] = out[selq] * (1 - we[selq, None]) + skincol(np.c_[qu[selq], qv[selq]]) * we[selq, None]
                 # stray dark specks of the old lash texture just outside that ellipse
-                far = (np.hypot((qu - cu) / (a * 2.1), (qv - cv) / (b * 1.6)) < 1.25) & (out[:, 0] - out[:, 2] > 25) & (out[:, 1] < 185)
+                far = (np.hypot((qu - cu) / (a * 2.1), (qv - cv) / (b * 1.6)) < 1.25) & (out[:, 0] - out[:, 2] > 25) & (out[:, 1] < 185) & (out[:, 1] - out[:, 2] < 28)
                 if far.any(): out[far] = skincol(np.c_[qu[far], qv[far]])
             col = np.clip(bil(face, xy) * gain, 0, 255)
+            wt = wt * (1 - keep_hair)
             out = out * (1 - wt[:, None]) + col * wt[:, None]; painted += int((wt > 0.5).sum())
         else:
             for (cu, cv, a, b, _sk) in eyes:
