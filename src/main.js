@@ -98,7 +98,9 @@ function loadFigure(url, { height, base, rotY, material }) {
       if (!o.isMesh) return;
       if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
       const twoSided = o.material.side === THREE.DoubleSide; // keep a model's own double-sided cloth
-      o.material = typeof material === 'function' ? material(o.material.map ?? null) : material;
+      const src = o.material;
+      o.material = typeof material === 'function' ? material(src.map ?? null, src.normalMap ?? null) : material;
+      if (src.map) src.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
       if (twoSided && typeof material === 'function') o.material.side = THREE.DoubleSide;
     });
     scene.add(root);

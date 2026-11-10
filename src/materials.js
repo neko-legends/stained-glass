@@ -72,6 +72,8 @@ export function createMaterials(lightU, textures) {
         uWrap: { value: extra.wrap ?? 0 },
         uTranslucency: { value: extra.translucency ?? 0 },
         uMap: { value: extra.map ?? null },
+        uNormalMap: { value: extra.normalMap ?? null },
+        uNormalScale: { value: extra.normalMap ? (extra.normalScale ?? 0.7) : 0 },
         uToon: { value: extra.toon ? 1 : 0 },
         uEmissive: { value: new THREE.Color(extra.emissive ?? 0x000000) },
       },
@@ -96,7 +98,7 @@ export function createMaterials(lightU, textures) {
   m.halo = surface(0x000000, 1, 0, 0);
   m.halo.uniforms.uEmissive.value.setRGB(4.2, 3.5, 2.1);
   // anime figure (base-colour map from a generated model): flat toon shading, see surface.frag
-  m.textured = (map) => surface(0xffffff, 0.9, 0, 5, { map, toon: true });
+  m.textured = (map, normalMap) => surface(0xffffff, 0.9, 0, 5, { map, normalMap, toon: true });
 
   m.glass = WALLS.map((w, i) =>
     new THREE.ShaderMaterial({

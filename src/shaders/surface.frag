@@ -6,6 +6,8 @@ uniform float uRough;
 uniform float uMetal;
 uniform int uPattern;      // 0 plain, 1 ashlar masonry, 2 floor slabs, 3 wood, 4 marble, 5 textured (uMap)
 uniform sampler2D uMap;
+uniform sampler2D uNormalMap;
+uniform float uNormalScale; // 0 = no normal map
 uniform float uWrap;       // 0 = Lambert; > 0 lets light bleed past the terminator (marble)
 uniform float uTranslucency; // light passing through thin parts (marble wings, fingers)
 uniform float uToon;         // 1 = anime shading: flat fill, two-tone key light, no speculars
@@ -151,6 +153,18 @@ void main() {
     rough = clamp(uRough + 0.12 * vein, 0.05, 1.0);
   } else if (uPattern == 5) {
     albedo *= texture(uMap, vUv).rgb;
+    if (uNormalScale > 0.0) {
+      // tangent-space normal map without stored tangents: build the frame from screen derivatives
+      vec3 tn = texture(uNormalMap, vUv).xyz * 2.0 - 1.0;
+      tn.xy *= uNormalScale;
+      vec3 dp1 = dFdx(P), dp2 = dFdy(P);
+      vec2 du1 = dFdx(vUv), du2 = dFdy(vUv);
+      vec3 dp2perp = cross(dp2, N), dp1perp = cross(N, dp1);
+      vec3 T = dp2perp * du1.x + dp1perp * du2.x;
+      vec3 B = dp2perp * du1.y + dp1perp * du2.y;
+      float m = max(dot(T, T), dot(B, B));
+      if (m > 1e-20) N = normalize((T * tn.x + B * tn.y) * inversesqrt(m) + N * tn.z);
+    }
   } else {
     float g = fbm(P.xy * 4.0 + P.z * 3.1);
     albedo *= 0.88 + 0.24 * g;

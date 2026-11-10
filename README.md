@@ -97,7 +97,7 @@ The pane rectangle only carries the texture; it does not define the window. A wi
 
 ## Statue and music
 
-`public/models/angel.glb` is a marble angel (160k triangles) generated from a reference image with a local image-to-3D model, then lit by the same surface shader with a procedural marble pattern. `public/models/girl.glb` is the praying girl kneeling before the altar (30k triangles, with her own colour texture). She is shaded flat, anime style (a soft two-tone key light and a constant fill), not with the stone's physical lighting, and a thin emissive ring tilted back with her head forms the halo. `public/audio/heavenly.mp3` loops once the visitor first clicks (browsers block audio before that); the Music button and `music=0` turn it off.
+`public/models/angel.glb` is a marble angel (160k triangles) generated from a reference image with a local image-to-3D model, then lit by the same surface shader with a procedural marble pattern. `public/models/girl.glb` is the praying girl kneeling before the altar (103k triangles, with her own 8K colour texture and a normal map). She is shaded flat, anime style (a soft two-tone key light and a constant fill), not with the stone's physical lighting, and a thin emissive ring tilted back with her head forms the halo. `public/audio/heavenly.mp3` loops once the visitor first clicks (browsers block audio before that); the Music button and `music=0` turn it off.
 
 ## Files
 
