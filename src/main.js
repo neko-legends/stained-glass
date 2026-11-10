@@ -85,7 +85,54 @@ scene.add(group);
 const gltfLoader = new GLTFLoader();
 let figuresPending = 2;
 const figureDone = () => { if (--figuresPending === 0) window.__statueReady = true; };
-function loadFigure(url, { height, base, rotY, material }) {
+// Anime outline: a copy of the figure drawn inside-out, pushed outward by a constant number of pixels
+// and filled with one dark colour. Only its rim shows past the figure, so the character reads as a
+// drawn shape, separate from the painterly room. Normals are averaged per position first: the model
+// is split along UV seams, and with split normals the pushed-out copy would tear open there.
+const outlineU = { uWidth: { value: num('outline', 2.2) }, uRes: { value: new THREE.Vector2(1, 1) }, uColor: { value: new THREE.Color(0.30, 0.17, 0.13) } };
+function makeOutline(mesh) {
+  const g = mesh.geometry, pos = g.attributes.position, nor = g.attributes.normal;
+  const acc = new Map(), keyOf = (i) => `${Math.round(pos.getX(i) * 2e4)},${Math.round(pos.getY(i) * 2e4)},${Math.round(pos.getZ(i) * 2e4)}`;
+  const keys = new Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const k = (keys[i] = keyOf(i)); let a = acc.get(k);
+    if (!a) acc.set(k, (a = [0, 0, 0]));
+    a[0] += nor.getX(i); a[1] += nor.getY(i); a[2] += nor.getZ(i);
+  }
+  const smooth = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const a = acc.get(keys[i]), l = Math.hypot(a[0], a[1], a[2]) || 1;
+    smooth[i * 3] = a[0] / l; smooth[i * 3 + 1] = a[1] / l; smooth[i * 3 + 2] = a[2] / l;
+  }
+  g.setAttribute('aSmoothNormal', new THREE.BufferAttribute(smooth, 3));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { ...outlineU, uToonFill: lightU.uToonFill },
+    vertexShader: `
+      attribute vec3 aSmoothNormal;
+      uniform float uWidth; uniform vec2 uRes;
+      void main() {
+        vec4 clip = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
+        vec3 nv = mat3(viewMatrix * modelMatrix) * aSmoothNormal;
+        vec2 dir = (projectionMatrix * vec4(nv, 0.0)).xy * uRes;       // normal direction in pixels
+        float len = length(dir);
+        // constant width on screen near the figure, thinning with distance so a far figure is not a blob
+        float w = uWidth * clamp(3.5 / clip.w, 0.3, 1.0);
+        if (len > 1e-6) clip.xy += (dir / len) * w * 2.0 / uRes * clip.w;
+        gl_Position = clip;
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor; uniform float uToonFill;
+      void main() { gl_FragColor = vec4(uColor * uToonFill * 1.6, 1.0); }  // same screen brightness at any exposure
+    `,
+    side: THREE.BackSide,
+  });
+  const o = new THREE.Mesh(g, mat);
+  o.name = 'outline'; o.layers.set(1); // no shadow from the outline shell
+  pipeline.noDepth.push(o);             // and it stays out of the ambient-occlusion depth pass
+  return o;
+}
+
+function loadFigure(url, { height, base, rotY, material, outline = false }) {
   gltfLoader.load(url, (gltf) => {
     const root = gltf.scene;
     root.rotation.y = rotY;
@@ -94,6 +141,7 @@ function loadFigure(url, { height, base, rotY, material }) {
     const k = height / (box.max.y - box.min.y);
     root.scale.setScalar(k);
     root.position.set(base.x - k * (box.min.x + box.max.x) / 2, base.y - k * box.min.y, base.z - k * (box.min.z + box.max.z) / 2);
+    const outlines = [];
     root.traverse((o) => {
       if (!o.isMesh) return;
       if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
@@ -102,7 +150,9 @@ function loadFigure(url, { height, base, rotY, material }) {
       o.material = typeof material === 'function' ? material(src.map ?? null, src.normalMap ?? null) : material;
       if (src.map) src.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
       if (twoSided && typeof material === 'function') o.material.side = THREE.DoubleSide;
+      if (outline) outlines.push(o);
     });
+    for (const o of outlines) o.add(makeOutline(o)); // child of the mesh: shares its transform
     scene.add(root);
     pipeline.shadowDirty = true;
     figureDone();
@@ -112,7 +162,7 @@ function loadFigure(url, { height, base, rotY, material }) {
 loadFigure('./models/angel.glb', { height: 5.6, base: statueBase, rotY: -Math.PI / 2, material: materials.marble });
 // the praying girl kneels on the floor before the altar steps, facing the angel
 const GIRL = { height: 1.3, base: new THREE.Vector3(DIM.L / 2 - 10.4, -0.012, 0) };
-loadFigure('./models/girl.glb', { ...GIRL, rotY: Math.PI / 2, material: materials.textured });
+loadFigure('./models/girl.glb', { ...GIRL, rotY: Math.PI / 2, material: materials.textured, outline: true }); // the halo is a separate mesh and gets no outline
 { // her halo: a thin ring of light on top of her head, tilted back with it (front edge raised) as in the reference sheet
   const halo = new THREE.Mesh(new THREE.TorusGeometry(0.19 * GIRL.height, 0.0045, 8, 128), materials.halo);
   halo.position.set(GIRL.base.x - 0.06, GIRL.height - 0.03, 0);
@@ -290,6 +340,9 @@ const fCam = gui.addFolder('Image');
 fCam.add(state, 'exposure', 0.2, 4, 0.01).onChange(applyLighting);
 fCam.add(state, 'autoExposure').name('auto exposure').onChange(applyLighting);
 fCam.add({ view: q.get('view') ?? 'nave' }, 'view', Object.keys(VIEWS)).onChange(setView);
+const fChar = gui.addFolder('Character');
+fChar.add(outlineU.uWidth, 'value', 0, 6, 0.1).name('outline width (px)');
+fChar.addColor({ c: '#' + outlineU.uColor.value.getHexString() }, 'c').name('outline colour').onChange((v) => outlineU.uColor.value.set(v));
 const fNav = gui.addFolder('Navigation');
 fNav.add(nav, 'pan', 0.25, 8, 0.05).name('pan speed').onChange(() => setFast(fastNow));
 fNav.add(nav, 'walk', 1, 20, 0.5).name('walk speed (m/s)');
@@ -446,6 +499,7 @@ function frame() {
   const fl = 0.82 + 0.1 * Math.sin(tsec * 9.1) + 0.06 * Math.sin(tsec * 23.7 + 1.3) + 0.05 * Math.sin(tsec * 4.3 + 0.4) + 0.04 * Math.sin(tsec * 51.0);
   lightU.uCandleColor.value.setRGB(0.5, 0.26, 0.08).multiplyScalar(state.candles * fl);
   materials.flame.uniforms.uEmissive.value.setRGB(9, 4.2, 1.1).multiplyScalar(Math.min(state.candles, 1) * (0.75 + 0.3 * fl));
+  outlineU.uRes.value.set(renderer.domElement.width, renderer.domElement.height);
   dust.material.uniforms.uPixelsPerRad.value = renderer.domElement.height / THREE.MathUtils.degToRad(camera.fov);
   walk(dt);
   if (flight) {
