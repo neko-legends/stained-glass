@@ -13,7 +13,7 @@ export const DIM = {
   bayLen: 8,
   spring: 18,     // vault springing height
   apex: 27,       // vault apex height
-  glassDepth: 0.8 // glass plane distance from the inner wall face
+  glassDepth: 0.3 // glass plane distance from the inner wall face (shallow, so the opening's own edge shadows little of the light)
 };
 
 const X = new THREE.Vector3(1, 0, 0);
