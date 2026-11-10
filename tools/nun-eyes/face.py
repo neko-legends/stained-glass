@@ -61,8 +61,7 @@ for side, cx in (('L', -0.098), ('R', 0.098)):
     hs = np.minimum(np.maximum(hs, floor), ph[inside])
     w = np.clip((1.25 - r[inside]) / 0.3, 0, 1); w = w * w * (3 - 2 * w)
     P[inside] += np.outer((ph[inside] * (1 - w) + (hs + 0.0006) * w) - ph[inside], d)
-    # plain skin tone around this eye (a median: an interpolating surface overshoots toward the hair colour at its rim)
-    _sk = np.median(vcol[ring], 0); skincol = lambda q, _sk=_sk: np.tile(_sk, (len(q), 1))
+    skincol = None  # filled in below, once the face triangles are known (see skin_fill)
     moved |= inside; eyes.append((cu, cv, a, b, skincol))
     print(side, 'eye at face (u,v) = (%.4f, %.4f); flattened %d vertices' % (cu, cv, inside.sum()))
 pu, pv, ph = P @ u, P @ v, P @ d
@@ -77,6 +76,29 @@ zone = (np.abs(cu_ - eye_mid[0]) < span * 1.25) & (cv_ > eye_mid[1] - span * 1.6
 front_h = np.median(ph[moved])
 cand = zone & (((fn @ d > 0.25) & (ch_ > front_h - 0.09) & ~hair) | moved[I].any(1))
 print('face triangles', int(cand.sum()))
+
+# ---- skin fill: what the skin would be where the old lash texture was ----
+# Sample the model's own texture densely around each eye, keep only real skin (blush included; no lash,
+# no hair), and fill by inverse-distance blending of the nearest samples. Unlike one flat tone this
+# carries the local shading and the blush across, so the patch cannot be told from the skin beside it.
+from scipy.spatial import cKDTree
+is_lash = lambda c: np.clip((c[:, 0] - c[:, 2] - 16) / 12, 0, 1) * np.clip((196 - c[:, 1]) / 22, 0, 1) * (c[:, 1] - c[:, 2] < 30)
+def skin_fill(cu, cv, a, b):
+    rr = np.hypot((cu_ - cu) / a, (cv_ - cv) / b)
+    pts, cols = [], []
+    for t in np.where((rr < 3.0) & (ch_ > front_h - 0.09) & (fn @ d > 0.1))[0]:
+        w = np.random.default_rng(t).dirichlet([1, 1, 1], 90); c = samp(w @ UV[I[t]]); q = w @ P[I[t]]
+        ok = (is_lash(c) < 0.02) & (c[:, 1] - c[:, 2] < 30) & (c[:, 0] > 200) & (c[:, 1] > 150)
+        pts.append(np.c_[q[ok] @ u, q[ok] @ v]); cols.append(c[ok])
+    pts, cols = np.concatenate(pts), np.concatenate(cols); tree = cKDTree(pts)
+    def fill(q):
+        dist, idx = tree.query(q, k=40)
+        w = 1.0 / (dist ** 2 + 1e-7); w /= w.sum(1, keepdims=True)
+        return (cols[idx] * w[..., None]).sum(1)
+    return fill, len(pts)
+for k, (cu, cv, a, b, _sk) in enumerate(eyes):
+    f, n = skin_fill(cu, cv, a, b); eyes[k] = (cu, cv, a, b, f)
+    print('skin samples around eye', k, n)
 
 # ---- mouth landmark on the model: the dark line below the nose ----
 ms = []
@@ -181,12 +203,12 @@ for t in np.where(cand)[0]:
             for (cu, cv, a, b, skincol) in eyes:
                 r = np.hypot((qu - cu) / (a * 1.18), (qv - cv) / b); we = np.clip((1.25 - r) / 0.3, 0, 1); we = we * we * (3 - 2 * we)
                 selq = we > 0
-                we = we * (1 - keep_hair)
+                # what was lash, plus the footprint of the old slab itself (its soft, hazy rim is not dark enough
+                # to be caught by colour). Everything else, the skin and blush beside it, is left exactly as it was.
+                foot = np.clip((1.3 - np.hypot((qu - cu) / 0.05, (qv - cv) / 0.024)) / 0.3, 0, 1)
+                we = np.maximum(we * is_lash(orig), foot * foot * (3 - 2 * foot)) * (1 - keep_hair)
                 selq = we > 0
                 if selq.any(): out[selq] = out[selq] * (1 - we[selq, None]) + skincol(np.c_[qu[selq], qv[selq]]) * we[selq, None]
-                # stray dark specks of the old lash texture just outside that ellipse
-                far = (np.hypot((qu - cu) / (a * 2.1), (qv - cv) / (b * 1.6)) < 1.25) & (out[:, 0] - out[:, 2] > 25) & (out[:, 1] < 185) & (out[:, 1] - out[:, 2] < 28)
-                if far.any(): out[far] = skincol(np.c_[qu[far], qv[far]])
             col = np.clip(bil(face, xy) * gain, 0, 255)
             wt = wt * (1 - keep_hair)
             out = out * (1 - wt[:, None]) + col * wt[:, None]; painted += int((wt > 0.5).sum())
@@ -214,16 +236,17 @@ for t in np.where(near_eyes)[0]:
     if not ins.any(): continue
     q = np.stack([w0[ins], w1[ins], w2[ins]], 1) @ P[[a_, b_, c_]]; qu, qv = q @ u, q @ v
     out = tex_f[ya:yb + 1, xa:xb + 1][ins]
-    brown = (out[:, 0] - out[:, 2] > 25) & (out[:, 1] < 185) & (out[:, 1] - out[:, 2] < 28)
+    lashness = is_lash(out)
     # inside the new lash line (between each eye's inner corner and its pulled-in outer end) dark is wanted
     in_lash = np.zeros(len(qu), bool)
     for k, (cu, cv, a, b, _sk) in enumerate(eyes):
         lo, hi = (cu - OUTER - 0.004, to_u(EYE_X[1]) + 0.004) if k == 0 else (to_u(EYE_X[2]) - 0.004, cu + OUTER + 0.004)
         in_lash |= (qu > lo) & (qu < hi) & (np.abs(qv - cv) < 0.02)
-    fix = brown & ~in_lash
+    fix = (lashness > 0.02) & ~in_lash
     if fix.any():
         k = 0 if (qu[fix].mean() < u_mid) else 1
-        out[fix] = eyes[k][4](np.c_[qu[fix], qv[fix]]); tex_f[ya:yb + 1, xa:xb + 1][ins] = out; specks += int(fix.sum())
+        wl = lashness[fix][:, None]
+        out[fix] = out[fix] * (1 - wl) + eyes[k][4](np.c_[qu[fix], qv[fix]]) * wl; tex_f[ya:yb + 1, xa:xb + 1][ins] = out; specks += int((lashness[fix] > 0.5).sum())
 print('texels repainted', painted, '| leftover lash texels cleaned', specks)
 tex = np.clip(tex_f, 0, 255).astype(np.uint8); nrm = np.clip(nrm_f, 0, 255).astype(np.uint8)
 
