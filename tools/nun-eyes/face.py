@@ -160,7 +160,7 @@ for t in np.where(cand)[0]:
                 selq = we > 0
                 if selq.any(): out[selq] = out[selq] * (1 - we[selq, None]) + skincol(np.c_[qu[selq], qv[selq]]) * we[selq, None]
                 # stray dark specks of the old lash texture just outside that ellipse
-                far = (np.hypot((qu - cu) / (a * 1.7), (qv - cv) / (b * 1.3)) < 1.25) & (out[:, 0] - out[:, 2] > 25) & (out.sum(1) < 600)
+                far = (np.hypot((qu - cu) / (a * 2.1), (qv - cv) / (b * 1.6)) < 1.25) & (out[:, 0] - out[:, 2] > 25) & (out[:, 1] < 185)
                 if far.any(): out[far] = skincol(np.c_[qu[far], qv[far]])
             col = np.clip(bil(face, xy) * gain, 0, 255)
             out = out * (1 - wt[:, None]) + col * wt[:, None]; painted += int((wt > 0.5).sum())
