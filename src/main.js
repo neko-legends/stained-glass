@@ -78,21 +78,46 @@ const scene = new THREE.Scene();
 const { group, statueBase } = buildCathedral(materials);
 scene.add(group);
 
-// --- angel statue (generated model, lit by the same marble shader) --------------
-const STATUE_HEIGHT = 5.6;
-new GLTFLoader().load('./models/angel.glb', (gltf) => {
-  const root = gltf.scene;
-  root.rotation.y = -Math.PI / 2; // model faces +Z; the nave is along -X from the altar
-  root.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(root);
-  const k = STATUE_HEIGHT / (box.max.y - box.min.y);
-  root.scale.setScalar(k);
-  root.position.set(statueBase.x - k * (box.min.x + box.max.x) / 2, statueBase.y - k * box.min.y, statueBase.z - k * (box.min.z + box.max.z) / 2);
-  root.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); o.material = materials.marble; } });
-  scene.add(root);
-  pipeline.shadowDirty = true;
-  window.__statueReady = true;
-}, undefined, (e) => { console.warn('statue:', e.message ?? e); window.__statueReady = true; });
+// --- generated figures ----------------------------------------------------------
+// GLB models made from reference images with a local image-to-3D model. They
+// are scaled to a target height, stood on a point, and lit by the same surface
+// shader as the building (so they take the glass light, AO and bounce).
+const gltfLoader = new GLTFLoader();
+let figuresPending = 2;
+const figureDone = () => { if (--figuresPending === 0) window.__statueReady = true; };
+function loadFigure(url, { height, base, rotY, material }) {
+  gltfLoader.load(url, (gltf) => {
+    const root = gltf.scene;
+    root.rotation.y = rotY;
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root);
+    const k = height / (box.max.y - box.min.y);
+    root.scale.setScalar(k);
+    root.position.set(base.x - k * (box.min.x + box.max.x) / 2, base.y - k * box.min.y, base.z - k * (box.min.z + box.max.z) / 2);
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+      o.material = typeof material === 'function' ? material(o.material.map ?? null) : material;
+    });
+    scene.add(root);
+    pipeline.shadowDirty = true;
+    figureDone();
+  }, undefined, (e) => { console.warn(url + ':', e.message ?? e); figureDone(); });
+}
+// marble angel on the plinth, facing down the nave
+loadFigure('./models/angel.glb', { height: 5.6, base: statueBase, rotY: -Math.PI / 2, material: materials.marble });
+// the praying girl kneels on the floor before the altar steps, facing the angel
+const GIRL = { height: 1.3, base: new THREE.Vector3(DIM.L / 2 - 10.4, -0.012, 0) };
+loadFigure('./models/girl.glb', { ...GIRL, rotY: Math.PI / 2, material: materials.textured });
+{ // her halo: a thin glowing ring tilted behind her head
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.007, 8, 96), materials.halo);
+  halo.position.set(GIRL.base.x - 0.16, GIRL.height + 0.02, 0);
+  halo.rotation.x = Math.PI / 2;
+  halo.rotateOnWorldAxis(new THREE.Vector3(0, 0, 1), -0.6); // back edge raised, like a tilted crown of light
+  halo.layers.set(1); // light, not a shadow caster
+  halo.name = 'halo';
+  scene.add(halo);
+}
 
 const camera = new THREE.PerspectiveCamera(num('fov', 62), window.innerWidth / window.innerHeight, 0.2, 120);
 camera.layers.enable(1);

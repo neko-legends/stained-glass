@@ -4,7 +4,8 @@
 uniform vec3 uColor;
 uniform float uRough;
 uniform float uMetal;
-uniform int uPattern;      // 0 plain, 1 ashlar masonry, 2 floor slabs, 3 wood, 4 marble
+uniform int uPattern;      // 0 plain, 1 ashlar masonry, 2 floor slabs, 3 wood, 4 marble, 5 textured (uMap)
+uniform sampler2D uMap;
 uniform float uWrap;       // 0 = Lambert; > 0 lets light bleed past the terminator (marble)
 uniform float uTranslucency; // light passing through thin parts (marble wings, fingers)
 uniform float uFloorPolish;
@@ -28,6 +29,7 @@ uniform float uBounceStrength;
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
+varying vec2 vUv;
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -145,6 +147,8 @@ void main() {
     albedo *= (0.92 + 0.12 * cloud) * (1.0 - 0.13 * vein);
     albedo = mix(albedo, albedo * vec3(0.93, 0.95, 1.0), vein);
     rough = clamp(uRough + 0.12 * vein, 0.05, 1.0);
+  } else if (uPattern == 5) {
+    albedo *= texture(uMap, vUv).rgb;
   } else {
     float g = fbm(P.xy * 4.0 + P.z * 3.1);
     albedo *= 0.88 + 0.24 * g;

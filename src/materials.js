@@ -70,6 +70,7 @@ export function createMaterials(lightU, textures) {
         uPattern: { value: pattern },
         uWrap: { value: extra.wrap ?? 0 },
         uTranslucency: { value: extra.translucency ?? 0 },
+        uMap: { value: extra.map ?? null },
         uEmissive: { value: new THREE.Color(extra.emissive ?? 0x000000) },
       },
       vertexShader: surfaceVert,
@@ -90,6 +91,10 @@ export function createMaterials(lightU, textures) {
     flame: surface(0x000000, 1, 0, 0),
   };
   m.flame.uniforms.uEmissive.value.setRGB(9, 4.2, 1.1);
+  m.halo = surface(0x000000, 1, 0, 0);
+  m.halo.uniforms.uEmissive.value.setRGB(7.0, 5.6, 3.6);
+  // textured figure (base-colour map from a generated model): soft cloth, thin veil lets light through
+  m.textured = (map) => surface(0xe8e4e0, 0.8, 0, 5, { map, wrap: 0.2, translucency: 0.35 });
 
   m.glass = WALLS.map((w, i) =>
     new THREE.ShaderMaterial({
