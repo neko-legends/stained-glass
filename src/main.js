@@ -97,7 +97,9 @@ function loadFigure(url, { height, base, rotY, material }) {
     root.traverse((o) => {
       if (!o.isMesh) return;
       if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+      const twoSided = o.material.side === THREE.DoubleSide; // keep a model's own double-sided cloth
       o.material = typeof material === 'function' ? material(o.material.map ?? null) : material;
+      if (twoSided && typeof material === 'function') o.material.side = THREE.DoubleSide;
     });
     scene.add(root);
     pipeline.shadowDirty = true;
