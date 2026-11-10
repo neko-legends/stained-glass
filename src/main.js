@@ -111,7 +111,7 @@ const GIRL = { height: 1.3, base: new THREE.Vector3(DIM.L / 2 - 10.4, -0.012, 0)
 loadFigure('./models/girl.glb', { ...GIRL, rotY: Math.PI / 2, material: materials.textured });
 { // her halo: a thin ring of light on top of her head, tilted back with it (front edge raised) as in the reference sheet
   const halo = new THREE.Mesh(new THREE.TorusGeometry(0.19 * GIRL.height, 0.0045, 8, 128), materials.halo);
-  halo.position.set(GIRL.base.x - 0.07, GIRL.height + 0.02, 0);
+  halo.position.set(GIRL.base.x - 0.06, GIRL.height - 0.03, 0);
   halo.rotation.x = Math.PI / 2;
   halo.rotateOnWorldAxis(new THREE.Vector3(0, 0, 1), 0.42); // she faces +X: lift the +X edge
   halo.layers.set(1); // light, not a shadow caster
