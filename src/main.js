@@ -293,6 +293,40 @@ fAir.close(); fCam.close();
 if (q.get('ui') === '0') { gui.hide(); document.getElementById('bar').style.display = 'none'; document.getElementById('hint').style.display = 'none'; }
 else if (window.innerWidth < 700) gui.close();
 
+// --- camera shots -----------------------------------------------------------------
+// One click flies the camera to a composed view; a shot may also set the time of day or start the
+// day running. The fly-through eases over ~1.4 s and yields to the mouse the moment it is touched.
+const SHOTS = [
+  { id: 'light', label: 'Light show', pos: [-17.5, 2.3, 2.6], look: [14, 7.5, -0.4], time: 7.2, play: true, tip: 'Wide view down the nave with the day running' },
+  { id: 'angel', label: 'Angel', pos: [13.2, 3.4, 2.4], look: [21.7, 6.1, 0], time: 15.3, tip: 'The marble angel in afternoon light' },
+  { id: 'nun', label: 'Nun', pos: [14.85, 1.4, 0.8], look: [13.62, 0.95, 0], time: 16.2, tip: 'The praying girl before the altar' },
+  { id: 'windows', label: 'Windows', pos: [-3, 5.5, -5.6], look: [4, 12.5, 8], time: 9.4, tip: 'The wall of cat windows, glowing against the morning sky' },
+  { id: 'rose', label: 'Rose window', pos: [5, 2.6, 0], look: [24, 17.5, 0], time: 9.3, tip: 'The altar rose and lancets with morning shafts crossing in front' },
+  { id: 'floor', label: 'Floor', pos: [-6, 9.5, -5.6], look: [6, 0, 3], time: 14.4, tip: 'The coloured light on the floor, from above' },
+];
+let flight = null;
+function flyTo(shot) {
+  const p0 = camera.position.clone(), t0 = controls.target.clone();
+  flight = { p0, t0, p1: new THREE.Vector3(...shot.pos), t1: new THREE.Vector3(...shot.look), start: performance.now(), dur: q.has('instant') ? 1 : 1400 };
+  if (shot.time != null) { state.time = shot.time; }
+  state.playing = !!shot.play;
+  if (shot.play) state.speed = Math.max(state.speed, 0.6);
+  syncPlay(); applyLighting(); gui.controllersRecursive().forEach((c) => c.updateDisplay());
+  for (const b of shotsEl.children) b.setAttribute('aria-pressed', String(b.dataset.id === shot.id));
+}
+const cancelFlight = () => { flight = null; };
+canvas.addEventListener('pointerdown', cancelFlight);
+canvas.addEventListener('wheel', cancelFlight, { passive: true });
+const shotsEl = document.getElementById('shots');
+for (const shot of SHOTS) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = shot.label; b.title = shot.tip; b.dataset.id = shot.id; b.setAttribute('aria-pressed', 'false');
+  b.addEventListener('click', () => flyTo(shot));
+  shotsEl.appendChild(b);
+}
+if (q.get('ui') === '0') shotsEl.style.display = 'none';
+if (q.has('shot')) { const sh = SHOTS.find((x) => x.id === q.get('shot')); if (sh) flyTo(sh); }
+
 // --- music ---------------------------------------------------------------------
 // Browsers only allow audio after a user gesture, so it starts on the first
 // click / key press unless the visitor has switched it off.
@@ -410,6 +444,12 @@ function frame() {
   materials.flame.uniforms.uEmissive.value.setRGB(9, 4.2, 1.1).multiplyScalar(Math.min(state.candles, 1) * (0.75 + 0.3 * fl));
   dust.material.uniforms.uPixelsPerRad.value = renderer.domElement.height / THREE.MathUtils.degToRad(camera.fov);
   walk(dt);
+  if (flight) {
+    const k = Math.min(1, (now - flight.start) / flight.dur), e = k * k * (3 - 2 * k);
+    camera.position.lerpVectors(flight.p0, flight.p1, e);
+    controls.target.lerpVectors(flight.t0, flight.t1, e);
+    if (k >= 1) flight = null;
+  }
   controls.update();
   // keep the visitor inside the building
   camera.position.x = THREE.MathUtils.clamp(camera.position.x, -lim.x, lim.x);

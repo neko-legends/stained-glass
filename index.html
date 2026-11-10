@@ -24,6 +24,14 @@
       border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
     }
     #bar button:hover { background: rgba(255, 200, 97, 0.28); }
+    #shots { position: fixed; z-index: 20; left: 16px; top: 38px; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 300px); }
+    #shots button {
+      background: rgba(12, 10, 14, 0.62); backdrop-filter: blur(8px); color: inherit; border: 1px solid rgba(255, 220, 160, 0.3);
+      border-radius: 8px; padding: 6px 11px; font-size: 13px; cursor: pointer;
+    }
+    #shots button:hover { background: rgba(255, 200, 97, 0.28); }
+    #shots button[aria-pressed="true"] { border-color: #ffc861; background: rgba(255, 200, 97, 0.22); }
+    @media (max-width: 600px) { #shots { top: 12px; max-width: calc(100vw - 32px); } }
     #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; letter-spacing: 0.08em; opacity: 0.8; pointer-events: none; }
     #hint { position: fixed; left: 16px; top: 14px; font-size: 12px; opacity: 0.55; pointer-events: none; }
     /* keep the bar clear of the controls panel on the right */
@@ -35,6 +43,7 @@
   <canvas id="view"></canvas>
   <div id="loading">Leading the glass…</div>
   <div id="hint">drag to look · right-drag or Shift-drag to pan · scroll to zoom · WASD to walk, Q/E down/up · hold Shift to go faster</div>
+  <div id="shots" aria-label="Camera shots"></div>
   <div id="bar">
     <div id="orb"></div>
     <div><div id="clock">09:30</div><div id="phase">morning</div></div>
