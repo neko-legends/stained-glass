@@ -56,6 +56,7 @@ export function createLightUniforms(textures, ppm) {
     uBounceTexel: { value: 0.25 },
     uBounceStrength: { value: 1.0 },
     uBump: { value: 1.0 },
+    uToonFill: { value: 0.2 },
   };
 }
 
@@ -71,6 +72,7 @@ export function createMaterials(lightU, textures) {
         uWrap: { value: extra.wrap ?? 0 },
         uTranslucency: { value: extra.translucency ?? 0 },
         uMap: { value: extra.map ?? null },
+        uToon: { value: extra.toon ? 1 : 0 },
         uEmissive: { value: new THREE.Color(extra.emissive ?? 0x000000) },
       },
       vertexShader: surfaceVert,
@@ -92,9 +94,9 @@ export function createMaterials(lightU, textures) {
   };
   m.flame.uniforms.uEmissive.value.setRGB(9, 4.2, 1.1);
   m.halo = surface(0x000000, 1, 0, 0);
-  m.halo.uniforms.uEmissive.value.setRGB(7.0, 5.6, 3.6);
-  // textured figure (base-colour map from a generated model): soft cloth, thin veil lets light through
-  m.textured = (map) => surface(0xe8e4e0, 0.8, 0, 5, { map, wrap: 0.2, translucency: 0.35 });
+  m.halo.uniforms.uEmissive.value.setRGB(4.2, 3.5, 2.1);
+  // anime figure (base-colour map from a generated model): flat toon shading, see surface.frag
+  m.textured = (map) => surface(0xffffff, 0.9, 0, 5, { map, toon: true });
 
   m.glass = WALLS.map((w, i) =>
     new THREE.ShaderMaterial({

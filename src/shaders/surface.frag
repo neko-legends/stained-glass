@@ -8,6 +8,8 @@ uniform int uPattern;      // 0 plain, 1 ashlar masonry, 2 floor slabs, 3 wood, 
 uniform sampler2D uMap;
 uniform float uWrap;       // 0 = Lambert; > 0 lets light bleed past the terminator (marble)
 uniform float uTranslucency; // light passing through thin parts (marble wings, fingers)
+uniform float uToon;         // 1 = anime shading: flat fill, two-tone key light, no speculars
+uniform float uToonFill;     // flat fill level for toon surfaces (set per frame to stay constant on screen)
 uniform float uFloorPolish;
 uniform float uBump;
 uniform vec3 uAmbient;
@@ -166,7 +168,7 @@ void main() {
   float ndlW = max((ndl + uWrap) / (1.0 + uWrap), 0.0);
   bool lightOn = dot(uLightColor, vec3(1.0)) > 1e-5;
   vec3 sunE = vec3(0.0);
-  if (ndlW > 0.0 && lightOn) {
+  if ((ndlW > 0.0 || uToon > 0.5) && lightOn) {
     float sh = sunShadow(P, N, rot, 1);
     if (sh > 0.0) sunE = uLightColor * sh * glassTransmit(P, 0.7, 1);
   }
@@ -212,6 +214,17 @@ void main() {
   spec += sunE * max(ndl, 0.0) * F * min(D * 0.25, 4.0) * specOcc;
 
   vec3 col = diffuse + spec + uEmissive;
+  if (uToon > 0.5) {
+    // Anime figure: the drawing's own colors carry the form, so light it almost flat. The key light
+    // gives a soft two-tone step, tinted only partly by the glass; indirect light is desaturated and
+    // barely occluded; a constant fill keeps her readable at any time of day.
+    const vec3 LUMA = vec3(0.3, 0.55, 0.15);
+    float band = smoothstep(-0.04, 0.14, ndl);
+    vec3 key = mix(vec3(dot(sunE, LUMA)), sunE, 0.5) * (0.3 + 0.7 * band) * 0.42;
+    vec3 ind = (glow + amb + bounce) * mix(1.0, ao, 0.35) + candle * 0.6;
+    ind = mix(vec3(dot(ind, LUMA)), ind, 0.55);
+    col = albedo * (key + ind + uToonFill) + uEmissive;
+  }
   // one NaN pixel would be smeared over the whole frame by the bloom blur
   col = mix(vec3(0.0), clamp(col, 0.0, 400.0), vec3(equal(col, col)));
   gl_FragColor = vec4(col, 1.0);

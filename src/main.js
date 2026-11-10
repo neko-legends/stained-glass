@@ -109,11 +109,11 @@ loadFigure('./models/angel.glb', { height: 5.6, base: statueBase, rotY: -Math.PI
 // the praying girl kneels on the floor before the altar steps, facing the angel
 const GIRL = { height: 1.3, base: new THREE.Vector3(DIM.L / 2 - 10.4, -0.012, 0) };
 loadFigure('./models/girl.glb', { ...GIRL, rotY: Math.PI / 2, material: materials.textured });
-{ // her halo: a thin glowing ring tilted behind her head
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.007, 8, 96), materials.halo);
-  halo.position.set(GIRL.base.x - 0.16, GIRL.height + 0.02, 0);
+{ // her halo: a thin ring of light on top of her head, tilted back with it (front edge raised) as in the reference sheet
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.19 * GIRL.height, 0.0045, 8, 128), materials.halo);
+  halo.position.set(GIRL.base.x - 0.07, GIRL.height + 0.02, 0);
   halo.rotation.x = Math.PI / 2;
-  halo.rotateOnWorldAxis(new THREE.Vector3(0, 0, 1), -0.6); // back edge raised, like a tilted crown of light
+  halo.rotateOnWorldAxis(new THREE.Vector3(0, 0, 1), 0.42); // she faces +X: lift the +X edge
   halo.layers.set(1); // light, not a shadow caster
   halo.name = 'halo';
   scene.add(halo);
@@ -199,6 +199,7 @@ function applyLighting() {
   const lum = sky.day + (sky.isSun ? Math.min(sky.color.g * 1.2, 1) : 0);
   const auto = state.autoExposure ? THREE.MathUtils.lerp(7.0, 1.0, THREE.MathUtils.smoothstep(lum, 0.0, 1.6)) : 1;
   renderer.toneMappingExposure = state.exposure * auto;
+  lightU.uToonFill.value = 0.16 / renderer.toneMappingExposure; // constant on screen whatever the exposure
 
   if (lastDir.distanceToSquared(sky.dir) > 1e-10) { pipeline.shadowDirty = true; lastDir.copy(sky.dir); }
 
