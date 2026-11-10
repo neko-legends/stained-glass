@@ -1,3 +1,13 @@
 node_modules
 dist
 .shots
+
+# video files are never committed
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.avi
+*.m4v
+
+__pycache__/
