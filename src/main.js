@@ -133,6 +133,34 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.zoomSpeed = 0.6;
+// OrbitControls pans in proportion to the distance to its pivot, so after zooming in close a pan
+// barely moves. Keep the pivot a few metres ahead and pan faster; Shift makes dragging faster still.
+controls.minDistance = 3;
+controls.panSpeed = 2.5;
+const BASE = { pan: 2.5, rotate: 1, zoom: 0.6 };
+const held = new Set();
+const setFast = (fast) => { controls.panSpeed = BASE.pan * (fast ? 3 : 1); controls.zoomSpeed = BASE.zoom * (fast ? 2.5 : 1); };
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  held.add(e.code);
+  if (e.key === 'Shift') setFast(true);
+});
+window.addEventListener('keyup', (e) => { held.delete(e.code); if (e.key === 'Shift') setFast(false); });
+window.addEventListener('blur', () => { held.clear(); setFast(false); });
+// WASD / arrows walk, Q and E go down and up; Shift walks faster. Moves the camera and its pivot together.
+const walkDir = new THREE.Vector3(), walkRight = new THREE.Vector3(), walkStep = new THREE.Vector3();
+function walk(dt) {
+  const f = (held.has('KeyW') || held.has('ArrowUp') ? 1 : 0) - (held.has('KeyS') || held.has('ArrowDown') ? 1 : 0);
+  const r = (held.has('KeyD') || held.has('ArrowRight') ? 1 : 0) - (held.has('KeyA') || held.has('ArrowLeft') ? 1 : 0);
+  const u = (held.has('KeyE') ? 1 : 0) - (held.has('KeyQ') ? 1 : 0);
+  if (!f && !r && !u) return;
+  camera.getWorldDirection(walkDir); walkDir.y = 0; walkDir.normalize();
+  walkRight.crossVectors(walkDir, camera.up).normalize();
+  const speed = (held.has('ShiftLeft') || held.has('ShiftRight') ? 14 : 5) * dt;
+  walkStep.set(0, 0, 0).addScaledVector(walkDir, f * speed).addScaledVector(walkRight, r * speed);
+  walkStep.y += u * speed;
+  camera.position.add(walkStep); controls.target.add(walkStep);
+}
 function setView(name) {
   const v = VIEWS[name] ?? VIEWS.nave;
   camera.position.set(...v[0]);
@@ -379,6 +407,7 @@ function frame() {
   lightU.uCandleColor.value.setRGB(0.5, 0.26, 0.08).multiplyScalar(state.candles * fl);
   materials.flame.uniforms.uEmissive.value.setRGB(9, 4.2, 1.1).multiplyScalar(Math.min(state.candles, 1) * (0.75 + 0.3 * fl));
   dust.material.uniforms.uPixelsPerRad.value = renderer.domElement.height / THREE.MathUtils.degToRad(camera.fov);
+  walk(dt);
   controls.update();
   // keep the visitor inside the building
   camera.position.x = THREE.MathUtils.clamp(camera.position.x, -lim.x, lim.x);

@@ -54,12 +54,17 @@ function tube(points, r, radial = 8) {
 }
 
 export function buildCathedral(materials) {
-  const bins = { stone: [], plain: [], floor: [], vault: [], gold: [], cloth: [], wood: [], flame: [], dark: [] };
+  const bins = { walls: [], shadowWalls: [], stone: [], plain: [], floor: [], vault: [], gold: [], cloth: [], wood: [], flame: [], dark: [] };
   const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0);
 
   // ---- outer walls with window openings ---------------------------------
+  // The visible wall is 1.2 m thick, but a window opening that deep is a tunnel: at an angle it would
+  // block most of the sun before it ever reached the glass. So the thick wall is not what casts the
+  // sun's shadow. A thin copy does, reaching only from the inside face to the glass, i.e. exactly the
+  // part of the opening a visitor can see. Every window then throws (nearly) its whole picture.
   for (const w of WALLS) {
-    bins.stone.push(wallGeometry(w.origin, w.U, w.V, w.N, w.width, w.height, wallT, w.openings));
+    bins.walls.push(wallGeometry(w.origin, w.U, w.V, w.N, w.width, w.height, wallT, w.openings));
+    bins.shadowWalls.push(wallGeometry(w.origin, w.U, w.V, w.N, w.width, w.height, DIM.glassDepth + 0.02, w.openings));
   }
 
   // ---- floor, roof --------------------------------------------------------
@@ -216,8 +221,10 @@ export function buildCathedral(materials) {
       n.clearGroups();
       return n;
     });
-    const mesh = new THREE.Mesh(mergeGeometries(clean, false), materials[key]);
+    const mesh = new THREE.Mesh(mergeGeometries(clean, false), materials[key === 'walls' || key === 'shadowWalls' ? 'stone' : key]);
     mesh.name = key;
+    if (key === 'walls') mesh.layers.set(1);       // seen, but does not cast the sun's shadow
+    if (key === 'shadowWalls') mesh.layers.set(2); // casts the sun's shadow, never seen
     if (key === 'flame') mesh.layers.set(1); // does not cast shadows
     group.add(mesh);
   }

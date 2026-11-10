@@ -81,6 +81,7 @@ export class Pipeline {
     this.shadowRT.depthTexture.minFilter = this.shadowRT.depthTexture.magFilter = THREE.NearestFilter;
     this.shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
     this.shadowCam.layers.set(0);
+    this.shadowCam.layers.enable(2); // shadow-only geometry (the thin wall copy, see cathedral.js)
     this.depthMat = new THREE.MeshBasicMaterial({
       colorWrite: false, side: THREE.DoubleSide,
       polygonOffset: true, polygonOffsetFactor: 1.5, polygonOffsetUnits: 2,
