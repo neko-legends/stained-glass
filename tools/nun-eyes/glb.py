@@ -20,6 +20,15 @@ class GLB:
         off = bv.get('byteOffset', 0) + a.get('byteOffset', 0); raw = np.ascontiguousarray(arr, dtype=CT[a['componentType']]).tobytes()
         self.bin[off:off + len(raw)] = raw
         if 'min' in a and a['type'] == 'VEC3': a['min'] = arr.min(0).tolist(); a['max'] = arr.max(0).tolist()
+    def add_vertex_attribute(self, prim, name, arr):
+        """Add a per-vertex FLOAT attribute (scalar or vecN) to a primitive. Custom names start with '_'."""
+        arr = np.ascontiguousarray(arr, dtype=np.float32); n = 1 if arr.ndim == 1 else arr.shape[1]
+        # a fresh buffer: numpy views handed out by acc() pin the old one, which therefore cannot grow
+        old = bytes(self.bin); old += b'\0' * ((4 - len(old) % 4) % 4)
+        off = len(old); self.bin = bytearray(old + arr.tobytes())
+        self.json['bufferViews'].append({'buffer': 0, 'byteOffset': off, 'byteLength': arr.nbytes, 'target': 34962})
+        self.json['accessors'].append({'bufferView': len(self.json['bufferViews']) - 1, 'componentType': 5126, 'count': len(arr), 'type': {1: 'SCALAR', 2: 'VEC2', 3: 'VEC3', 4: 'VEC4'}[n]})
+        prim['attributes'][name] = len(self.json['accessors']) - 1
     def image_bytes(self, i):
         bv = self.json['bufferViews'][self.json['images'][i]['bufferView']]
         return bytes(self.bin[bv.get('byteOffset', 0):bv.get('byteOffset', 0) + bv['byteLength']])

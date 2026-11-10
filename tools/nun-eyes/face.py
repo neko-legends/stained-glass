@@ -259,6 +259,21 @@ for k in range(3): np.add.at(acc, inv[I[:, k]], fnn)
 N = g.acc(pr['attributes']['NORMAL']).astype(np.float64).copy()
 nn = acc[inv[moved]]; nn /= np.maximum(np.linalg.norm(nn, axis=1, keepdims=True), 1e-12); N[moved] = nn
 g.set_acc(pr['attributes']['NORMAL'], N.astype(np.float32))
+# ---- outline mask: no ink line inside the face ----
+# The scene draws an anime outline by pushing a copy of the mesh outward. Around the eyes, brows, nose
+# and mouth that copy catches on every small crease and looks broken, so those vertices get weight 0
+# (stored as the custom vertex attribute _OUTLINE); the rim of the face, the jaw and everything else keep 1.
+fu, fv = P @ u, P @ v
+fc_u, fc_v = u_mid, (eye_v + mouth[1]) / 2 + 0.012
+re = np.hypot((fu - fc_u) / (span * 0.5 + 0.062), (fv - fc_v) / ((eye_v - mouth[1]) / 2 + 0.058))
+on_face = (P @ d > front_h - 0.06) & (VN @ d > 0.0)
+hair_v = (vcol[:, 1] - vcol[:, 2] > 36) & (vcol[:, 0] > 170)
+_nonhair = np.zeros(_inv.max() + 1, bool); np.logical_or.at(_nonhair, _inv, ~hair_v)   # split copies of a point agree
+wo = np.clip((re - 0.86) / 0.3, 0, 1); wo = wo * wo * (3 - 2 * wo)
+outline_w = np.where(on_face & _nonhair[_inv], wo, 1.0)
+_mn = np.full(_inv.max() + 1, 1.0); np.minimum.at(_mn, _inv, outline_w); outline_w = _mn[_inv]
+g.add_vertex_attribute(pr, '_OUTLINE', outline_w)
+print('outline suppressed on', int((outline_w < 0.5).sum()), 'face vertices')
 cb, nb = io.BytesIO(), io.BytesIO()
 Image.fromarray(tex).save(cb, 'JPEG', quality=95, subsampling=0); Image.fromarray(nrm).save(nb, 'PNG', compress_level=6)
 g.save(OUT, {ci: (cb.getvalue(), 'image/jpeg'), ni: (nb.getvalue(), 'image/png')})

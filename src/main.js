@@ -105,10 +105,13 @@ function makeOutline(mesh) {
     smooth[i * 3] = a[0] / l; smooth[i * 3 + 1] = a[1] / l; smooth[i * 3 + 2] = a[2] / l;
   }
   g.setAttribute('aSmoothNormal', new THREE.BufferAttribute(smooth, 3));
+  // optional per-vertex line weight baked into the model (0 = no line: the inside of the face)
+  if (!g.attributes._outline) g.setAttribute('_outline', new THREE.BufferAttribute(new Float32Array(pos.count).fill(1), 1));
   const mat = new THREE.ShaderMaterial({
     uniforms: { ...outlineU, uToonFill: lightU.uToonFill },
     vertexShader: `
       attribute vec3 aSmoothNormal;
+      attribute float _outline;
       uniform float uWidth; uniform vec2 uRes;
       void main() {
         vec4 clip = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
@@ -116,7 +119,7 @@ function makeOutline(mesh) {
         vec2 dir = (projectionMatrix * vec4(nv, 0.0)).xy * uRes;       // normal direction in pixels
         float len = length(dir);
         // constant width on screen near the figure, thinning with distance so a far figure is not a blob
-        float w = uWidth * clamp(3.5 / clip.w, 0.3, 1.0);
+        float w = uWidth * clamp(3.5 / clip.w, 0.3, 1.0) * _outline;
         if (len > 1e-6) clip.xy += (dir / len) * w * 2.0 / uRes * clip.w;
         gl_Position = clip;
       }`,
@@ -351,24 +354,21 @@ if (q.get('ui') === '0') { gui.hide(); document.getElementById('bar').style.disp
 else if (window.innerWidth < 700) gui.close();
 
 // --- camera shots -----------------------------------------------------------------
-// One click flies the camera to a composed view; a shot may also set the time of day or start the
-// day running. The fly-through eases over ~1.4 s and yields to the mouse the moment it is touched.
+// One click flies the camera to a composed view. Shots only move the camera: the time of day, the
+// sun and whether the day is running are left exactly as they are. The fly-through eases over ~1.4 s
+// and yields to the mouse the moment it is touched.
 const SHOTS = [
-  { id: 'light', label: 'Light show', pos: [-17.5, 2.3, 2.6], look: [14, 7.5, -0.4], time: 7.2, play: true, tip: 'Wide view down the nave with the day running' },
-  { id: 'angel', label: 'Angel', pos: [13.2, 3.4, 2.4], look: [21.7, 6.1, 0], time: 15.3, tip: 'The marble angel in afternoon light' },
-  { id: 'nun', label: 'Nun', pos: [14.85, 1.4, 0.8], look: [13.62, 0.95, 0], time: 16.2, tip: 'The praying girl before the altar' },
-  { id: 'windows', label: 'Windows', pos: [-3, 5.5, -5.6], look: [4, 12.5, 8], time: 9.4, tip: 'The wall of cat windows, glowing against the morning sky' },
-  { id: 'rose', label: 'Rose window', pos: [5, 2.6, 0], look: [24, 17.5, 0], time: 9.3, tip: 'The altar rose and lancets with morning shafts crossing in front' },
-  { id: 'floor', label: 'Floor', pos: [-6, 9.5, -5.6], look: [6, 0, 3], time: 14.4, tip: 'The coloured light on the floor, from above' },
+  { id: 'light', label: 'Light show', pos: [-17.5, 2.3, 2.6], look: [14, 7.5, -0.4], tip: 'Wide view down the nave: press Play to watch the light move' },
+  { id: 'angel', label: 'Angel', pos: [13.2, 3.4, 2.4], look: [21.7, 6.1, 0], tip: 'The marble angel' },
+  { id: 'nun', label: 'Nun', pos: [14.85, 1.4, 0.8], look: [13.62, 0.95, 0], tip: 'The praying girl before the altar' },
+  { id: 'windows', label: 'Windows', pos: [-3, 5.5, -5.6], look: [4, 12.5, 8], tip: 'The wall of cat windows' },
+  { id: 'rose', label: 'Rose window', pos: [5, 2.6, 0], look: [24, 17.5, 0], tip: 'The altar rose and lancets' },
+  { id: 'floor', label: 'Floor', pos: [-6, 9.5, -5.6], look: [6, 0, 3], tip: 'The coloured light on the floor, from above' },
 ];
 let flight = null;
 function flyTo(shot) {
   const p0 = camera.position.clone(), t0 = controls.target.clone();
   flight = { p0, t0, p1: new THREE.Vector3(...shot.pos), t1: new THREE.Vector3(...shot.look), start: performance.now(), dur: q.has('instant') ? 1 : 1400 };
-  if (shot.time != null) { state.time = shot.time; }
-  state.playing = !!shot.play;
-  if (shot.play) state.speed = Math.max(state.speed, 0.6);
-  syncPlay(); applyLighting(); gui.controllersRecursive().forEach((c) => c.updateDisplay());
   for (const b of shotsEl.children) b.setAttribute('aria-pressed', String(b.dataset.id === shot.id));
 }
 const cancelFlight = () => { flight = null; };
