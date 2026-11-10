@@ -46,7 +46,9 @@ for side, cx in (('L', -0.098), ('R', 0.098)):
     hs = surf(np.c_[pu[inside], pv[inside]])
     w = np.clip((1.25 - r[inside]) / 0.3, 0, 1); w = w * w * (3 - 2 * w)
     P[inside] += np.outer((ph[inside] * (1 - w) + (hs + 0.0006) * w) - ph[inside], d)
-    moved |= inside; eyes.append((cu, cv, a, b))
+    # plain skin tone around this eye (a median: an interpolating surface overshoots toward the hair colour at its rim)
+    _sk = np.median(vcol[ring], 0); skincol = lambda q, _sk=_sk: np.tile(_sk, (len(q), 1))
+    moved |= inside; eyes.append((cu, cv, a, b, skincol))
     print(side, 'eye at face (u,v) = (%.4f, %.4f); flattened %d vertices' % (cu, cv, inside.sum()))
 pu, pv, ph = P @ u, P @ v, P @ d
 
@@ -74,9 +76,24 @@ mouth = np.array([eye_mid[0], np.median(ms[np.abs(ms[:, 0] - eye_mid[0]) < span 
 print('mouth at face (u,v) = (%.4f, %.4f) from %d dark samples; eye span %.4f, eye-to-mouth %.4f' % (mouth[0], mouth[1], len(ms), span, eye_mid[1] - mouth[1]))
 
 # ---- affine: face (u,v) -> image pixels, exact on the three landmarks ----
-LM_FACE = np.array([[eyes[0][0], eyes[0][1]], [eyes[1][0], eyes[1][1]], mouth])
-A = np.linalg.solve(np.c_[LM_FACE, np.ones(3)], LM_IMG * [FW, FH])   # (u,v,1) @ A = (x, y)
-to_img = lambda qu, qv: np.c_[qu, qv, np.ones(len(qu))] @ A
+# Horizontal: each eye is fitted corner to corner into the width the model's own eye had. Matching
+# only the eye centres is not enough: the drawn eyes are wider than the model's, and their outer ends
+# would wrap round the side of the face toward the hair. Vertical: linear through the eyes and mouth.
+EYE_W = 0.078                                  # width of each eye on the model (m); the original slab was 0.083
+EYE_X = np.array([0.109, 0.414, 0.586, 0.890]) # lash extents in the image: left outer, left inner, right inner, right outer
+ctrl_u = np.array([eyes[0][0] - EYE_W / 2, eyes[0][0] + EYE_W / 2, eyes[1][0] - EYE_W / 2, eyes[1][0] + EYE_W / 2])
+ctrl_x = EYE_X * FW
+slope = (ctrl_x[3] - ctrl_x[0]) / (ctrl_u[3] - ctrl_u[0])    # beyond the eyes: the overall scale, so cheeks are not squeezed
+eye_v = (eyes[0][1] + eyes[1][1]) / 2; eye_y = (LM_IMG[0, 1] + LM_IMG[1, 1]) / 2 * FH
+vs = (LM_IMG[2, 1] * FH - eye_y) / (mouth[1] - eye_v)
+us = (LM_IMG[1, 0] - LM_IMG[0, 0]) * FW / (eyes[1][0] - eyes[0][0]); u_mid = (eyes[0][0] + eyes[1][0]) / 2
+def to_img(qu, qv):
+    x = np.interp(qu, ctrl_u, ctrl_x)
+    x = np.where(qu < ctrl_u[0], ctrl_x[0] + (qu - ctrl_u[0]) * slope, x)
+    x = np.where(qu > ctrl_u[3], ctrl_x[3] + (qu - ctrl_u[3]) * slope, x)
+    plain = 0.5 * FW + (qu - u_mid) * us          # one scale, centred: used away from the eyes (nose, mouth, cheeks)
+    g = np.exp(-((qv - eye_v) / 0.028) ** 2)       # the corner-to-corner fit applies only in the band of the eyes
+    return np.c_[x * g + plain * (1 - g), eye_y + (qv - eye_v) * vs]
 
 # ---- image-side mask: the skin of the generated face, feathered ----
 hsvish = (face[..., 1] - face[..., 2] < 34) & (face[..., 0] > 150)             # skin, lashes, lips: anything not blond hair
@@ -110,6 +127,12 @@ print('skin: model', np.median(mo, 0).round(1), 'image', np.median(io_, 0).round
 
 # ---- 2. paint ----
 tex_f = tex.astype(np.float64); nrm_f = nrm.astype(np.float64); flat = np.array([128.0, 128.0, 255.0]); painted = 0
+# smooth per-vertex facing of the face (shared across UV-split copies), so the paint fades out where
+# the cheek turns away instead of smearing round the side of the head
+_key = np.round(P * 1e5).astype(np.int64); _, _inv = np.unique(_key, axis=0, return_inverse=True); _inv = _inv.ravel()
+_acc = np.zeros((_inv.max() + 1, 3)); _fnA = np.cross(P[I][:, 1] - P[I][:, 0], P[I][:, 2] - P[I][:, 0])
+for k in range(3): np.add.at(_acc, _inv[I[:, k]], _fnA)
+VN = _acc[_inv]; VN /= np.maximum(np.linalg.norm(VN, axis=1, keepdims=True), 1e-12); vfacing = VN @ d
 for t in np.where(cand)[0]:
     a_, b_, c_ = I[t]; uvs = UV[[a_, b_, c_]]
     for img, W_, H_, mode in ((tex_f, TW, TH, 'color'), (nrm_f, NW, NH, 'normal')):
@@ -128,10 +151,21 @@ for t in np.where(cand)[0]:
         if mode == 'color':
             xy = to_img(qu, qv); inb = (xy[:, 0] > 2) & (xy[:, 1] > 2) & (xy[:, 0] < FW - 3) & (xy[:, 1] < FH - 3)
             wt = np.where(inb, bil(soft, xy), 0.0)
+            fc = np.stack([w0[ins], w1[ins], w2[ins]], 1) @ vfacing[[a_, b_, c_]]
+            wt = wt * np.clip((fc - 0.5) / 0.25, 0, 1)
+            # where the old lash slab was, first lay down clean skin (interpolated from around the eye),
+            # so nothing of the old brown texture survives where the picture does not reach
+            for (cu, cv, a, b, skincol) in eyes:
+                r = np.hypot((qu - cu) / (a * 1.18), (qv - cv) / b); we = np.clip((1.25 - r) / 0.3, 0, 1); we = we * we * (3 - 2 * we)
+                selq = we > 0
+                if selq.any(): out[selq] = out[selq] * (1 - we[selq, None]) + skincol(np.c_[qu[selq], qv[selq]]) * we[selq, None]
+                # stray dark specks of the old lash texture just outside that ellipse
+                far = (np.hypot((qu - cu) / (a * 1.7), (qv - cv) / (b * 1.3)) < 1.25) & (out[:, 0] - out[:, 2] > 25) & (out.sum(1) < 600)
+                if far.any(): out[far] = skincol(np.c_[qu[far], qv[far]])
             col = np.clip(bil(face, xy) * gain, 0, 255)
             out = out * (1 - wt[:, None]) + col * wt[:, None]; painted += int((wt > 0.5).sum())
         else:
-            for (cu, cv, a, b) in eyes:
+            for (cu, cv, a, b, _sk) in eyes:
                 r = np.hypot((qu - cu) / a, (qv - cv) / b); wt = np.clip((1.3 - r) / 0.3, 0, 1); wt = wt * wt * (3 - 2 * wt)
                 out = out * (1 - wt[:, None]) + flat * wt[:, None]
         img[ya:yb + 1, xa:xb + 1][ins] = out
