@@ -133,13 +133,12 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.zoomSpeed = 0.6;
-// OrbitControls pans in proportion to the distance to its pivot, so after zooming in close a pan
-// barely moves. Keep the pivot a few metres ahead and pan faster; Shift makes dragging faster still.
-controls.minDistance = 3;
-controls.panSpeed = 2.5;
-const BASE = { pan: 2.5, rotate: 1, zoom: 0.6 };
+// Pan speed is adjustable (panel: "pan speed"); the default is twice OrbitControls' own. Shift doubles it.
+const nav = { pan: num('pan', 2), walk: 5 };
+controls.panSpeed = nav.pan;
 const held = new Set();
-const setFast = (fast) => { controls.panSpeed = BASE.pan * (fast ? 3 : 1); controls.zoomSpeed = BASE.zoom * (fast ? 2.5 : 1); };
+let fastNow = false;
+const setFast = (fast) => { fastNow = fast; controls.panSpeed = nav.pan * (fast ? 2 : 1); controls.zoomSpeed = 0.6 * (fast ? 2 : 1); };
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   held.add(e.code);
@@ -156,7 +155,7 @@ function walk(dt) {
   if (!f && !r && !u) return;
   camera.getWorldDirection(walkDir); walkDir.y = 0; walkDir.normalize();
   walkRight.crossVectors(walkDir, camera.up).normalize();
-  const speed = (held.has('ShiftLeft') || held.has('ShiftRight') ? 14 : 5) * dt;
+  const speed = nav.walk * (held.has('ShiftLeft') || held.has('ShiftRight') ? 2.5 : 1) * dt;
   walkStep.set(0, 0, 0).addScaledVector(walkDir, f * speed).addScaledVector(walkRight, r * speed);
   walkStep.y += u * speed;
   camera.position.add(walkStep); controls.target.add(walkStep);
@@ -287,6 +286,9 @@ const fCam = gui.addFolder('Image');
 fCam.add(state, 'exposure', 0.2, 4, 0.01).onChange(applyLighting);
 fCam.add(state, 'autoExposure').name('auto exposure').onChange(applyLighting);
 fCam.add({ view: q.get('view') ?? 'nave' }, 'view', Object.keys(VIEWS)).onChange(setView);
+const fNav = gui.addFolder('Navigation');
+fNav.add(nav, 'pan', 0.25, 8, 0.05).name('pan speed').onChange(() => setFast(fastNow));
+fNav.add(nav, 'walk', 1, 20, 0.5).name('walk speed (m/s)');
 fAir.close(); fCam.close();
 if (q.get('ui') === '0') { gui.hide(); document.getElementById('bar').style.display = 'none'; document.getElementById('hint').style.display = 'none'; }
 else if (window.innerWidth < 700) gui.close();
