@@ -195,7 +195,36 @@ for t in np.where(cand)[0]:
                 r = np.hypot((qu - cu) / a, (qv - cv) / b); wt = np.clip((1.3 - r) / 0.3, 0, 1); wt = wt * wt * (3 - 2 * wt)
                 out = out * (1 - wt[:, None]) + flat * wt[:, None]
         img[ya:yb + 1, xa:xb + 1][ins] = out
-print('texels repainted', painted)
+# ---- last pass: leftovers of the old lash texture on triangles the face selection skipped ----
+# (slivers at the outer corners that face sideways or sit under a hair strand). Any dark, brown, non-hair
+# texel in the band of the eyes that lies outside the new lash line becomes plain skin.
+specks = 0
+near_eyes = (np.abs(cv_ - eye_v) < 0.045) & (np.abs(cu_ - u_mid) < span * 1.15) & (ch_ > front_h - 0.09)
+for t in np.where(near_eyes)[0]:
+    a_, b_, c_ = I[t]; uvs = UV[[a_, b_, c_]]
+    xs, ys = uvs[:, 0] * TW, uvs[:, 1] * TH
+    xa, xb = int(max(0, np.floor(xs.min()) - 1)), int(min(TW - 1, np.ceil(xs.max()) + 1)); ya, yb = int(max(0, np.floor(ys.min()) - 1)), int(min(TH - 1, np.ceil(ys.max()) + 1))
+    den = (ys[1] - ys[2]) * (xs[0] - xs[2]) + (xs[2] - xs[1]) * (ys[0] - ys[2])
+    if abs(den) < 1e-9: continue
+    gx, gy = np.meshgrid(np.arange(xa, xb + 1) + 0.5, np.arange(ya, yb + 1) + 0.5)
+    w0 = ((ys[1] - ys[2]) * (gx - xs[2]) + (xs[2] - xs[1]) * (gy - ys[2])) / den
+    w1 = ((ys[2] - ys[0]) * (gx - xs[2]) + (xs[0] - xs[2]) * (gy - ys[2])) / den
+    w2 = 1 - w0 - w1; pad = 1.5 / max(1.0, np.sqrt(abs(den)))
+    ins = (w0 >= -pad) & (w1 >= -pad) & (w2 >= -pad)
+    if not ins.any(): continue
+    q = np.stack([w0[ins], w1[ins], w2[ins]], 1) @ P[[a_, b_, c_]]; qu, qv = q @ u, q @ v
+    out = tex_f[ya:yb + 1, xa:xb + 1][ins]
+    brown = (out[:, 0] - out[:, 2] > 25) & (out[:, 1] < 185) & (out[:, 1] - out[:, 2] < 28)
+    # inside the new lash line (between each eye's inner corner and its pulled-in outer end) dark is wanted
+    in_lash = np.zeros(len(qu), bool)
+    for k, (cu, cv, a, b, _sk) in enumerate(eyes):
+        lo, hi = (cu - OUTER - 0.004, to_u(EYE_X[1]) + 0.004) if k == 0 else (to_u(EYE_X[2]) - 0.004, cu + OUTER + 0.004)
+        in_lash |= (qu > lo) & (qu < hi) & (np.abs(qv - cv) < 0.02)
+    fix = brown & ~in_lash
+    if fix.any():
+        k = 0 if (qu[fix].mean() < u_mid) else 1
+        out[fix] = eyes[k][4](np.c_[qu[fix], qv[fix]]); tex_f[ya:yb + 1, xa:xb + 1][ins] = out; specks += int(fix.sum())
+print('texels repainted', painted, '| leftover lash texels cleaned', specks)
 tex = np.clip(tex_f, 0, 255).astype(np.uint8); nrm = np.clip(nrm_f, 0, 255).astype(np.uint8)
 
 # ---- write ----
