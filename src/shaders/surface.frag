@@ -219,9 +219,13 @@ void main() {
     // gives a soft two-tone step, tinted only partly by the glass; indirect light is desaturated and
     // barely occluded; a constant fill keeps her readable at any time of day.
     const vec3 LUMA = vec3(0.3, 0.55, 0.15);
-    float band = smoothstep(-0.04, 0.14, ndl);
-    vec3 key = mix(vec3(dot(sunE, LUMA)), sunE, 0.5) * (0.3 + 0.7 * band) * 0.42;
-    vec3 ind = (glow + amb + bounce) * mix(1.0, ao, 0.35) + candle * 0.6;
+    float band = smoothstep(-0.3, 0.3, ndl);
+    vec3 key = mix(vec3(dot(sunE, LUMA)), sunE, 0.5) * (0.45 + 0.55 * band) * 0.42;
+    // indirect light must not depend on the surface normal, or a tilted face goes grey under its
+    // own chin: light every point as if it faced the viewer and slightly up
+    vec3 Nt = normalize(V + vec3(0.0, 0.6, 0.0));
+    vec3 ind = glassGlow(P, Nt) * uGlowStrength + uAmbient + floorBounce(P, vec3(0.0)) * uBounceStrength;
+    ind = ind * mix(1.0, ao, 0.2) + candle * 0.6;
     ind = mix(vec3(dot(ind, LUMA)), ind, 0.55);
     col = albedo * (key + ind + uToonFill) + uEmissive;
   }
