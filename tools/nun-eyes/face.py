@@ -76,23 +76,28 @@ mouth = np.array([eye_mid[0], np.median(ms[np.abs(ms[:, 0] - eye_mid[0]) < span 
 print('mouth at face (u,v) = (%.4f, %.4f) from %d dark samples; eye span %.4f, eye-to-mouth %.4f' % (mouth[0], mouth[1], len(ms), span, eye_mid[1] - mouth[1]))
 
 # ---- affine: face (u,v) -> image pixels, exact on the three landmarks ----
-# Horizontal: each eye is fitted corner to corner into the width the model's own eye had. Matching
-# only the eye centres is not enough: the drawn eyes are wider than the model's, and their outer ends
-# would wrap round the side of the face toward the hair. Vertical: linear through the eyes and mouth.
-EYE_W = 0.078                                  # width of each eye on the model (m); the original slab was 0.083
+# Horizontal: one scale, centred, set by the distance between the eye centres, so the gap between the
+# eyes and everything else on the face keeps the drawing's proportions. The one exception is the OUTER
+# end of each eye: the drawn eyes are wider than the model's, and their outer ends would wrap round the
+# side of the face toward the hair, so the outer half of each eye is compressed to end where the
+# model's own eye ended. Inner corners are not moved. Vertical: linear through the eyes and mouth.
 EYE_X = np.array([0.109, 0.414, 0.586, 0.890]) # lash extents in the image: left outer, left inner, right inner, right outer
-ctrl_u = np.array([eyes[0][0] - EYE_W / 2, eyes[0][0] + EYE_W / 2, eyes[1][0] - EYE_W / 2, eyes[1][0] + EYE_W / 2])
-ctrl_x = EYE_X * FW
-slope = (ctrl_x[3] - ctrl_x[0]) / (ctrl_u[3] - ctrl_u[0])    # beyond the eyes: the overall scale, so cheeks are not squeezed
+OUTER = 0.041                                  # how far the model's own eye reached outward from its centre (m)
+us = (LM_IMG[1, 0] - LM_IMG[0, 0]) * FW / (eyes[1][0] - eyes[0][0]); u_mid = (eyes[0][0] + eyes[1][0]) / 2
+to_u = lambda fx: u_mid + (fx - 0.5) * FW / us     # where an image x lands under the plain scale
+cL, cR = (EYE_X[0] + EYE_X[1]) / 2, (EYE_X[2] + EYE_X[3]) / 2
+# control points (model u -> image x): outer end pulled in, eye centre and inner corner where the plain scale puts them
+ctrl_u = np.array([eyes[0][0] - OUTER, to_u(cL), to_u(EYE_X[1]), to_u(EYE_X[2]), to_u(cR), eyes[1][0] + OUTER])
+ctrl_x = np.array([EYE_X[0], cL, EYE_X[1], EYE_X[2], cR, EYE_X[3]]) * FW
 eye_v = (eyes[0][1] + eyes[1][1]) / 2; eye_y = (LM_IMG[0, 1] + LM_IMG[1, 1]) / 2 * FH
 vs = (LM_IMG[2, 1] * FH - eye_y) / (mouth[1] - eye_v)
-us = (LM_IMG[1, 0] - LM_IMG[0, 0]) * FW / (eyes[1][0] - eyes[0][0]); u_mid = (eyes[0][0] + eyes[1][0]) / 2
 def to_img(qu, qv):
+    plain = 0.5 * FW + (qu - u_mid) * us
     x = np.interp(qu, ctrl_u, ctrl_x)
-    x = np.where(qu < ctrl_u[0], ctrl_x[0] + (qu - ctrl_u[0]) * slope, x)
-    x = np.where(qu > ctrl_u[3], ctrl_x[3] + (qu - ctrl_u[3]) * slope, x)
-    plain = 0.5 * FW + (qu - u_mid) * us          # one scale, centred: used away from the eyes (nose, mouth, cheeks)
-    g = np.exp(-((qv - eye_v) / 0.028) ** 2)       # the corner-to-corner fit applies only in the band of the eyes
+    # beyond the outer ends: continue at the plain scale from there, so the temple skin is not stretched
+    x = np.where(qu < ctrl_u[0], ctrl_x[0] + (qu - ctrl_u[0]) * us, x)
+    x = np.where(qu > ctrl_u[-1], ctrl_x[-1] + (qu - ctrl_u[-1]) * us, x)
+    g = np.exp(-((qv - eye_v) / 0.028) ** 2)       # the outer-end fit applies only in the band of the eyes
     return np.c_[x * g + plain * (1 - g), eye_y + (qv - eye_v) * vs]
 
 # ---- image-side mask: the skin of the generated face, feathered ----
