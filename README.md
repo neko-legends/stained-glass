@@ -2,6 +2,8 @@
 
 Stained glass realism in three.js: a procedural gothic hall where sunlight (or moonlight) is filtered by the windows, projected onto the stone, and scattered in the air as coloured shafts. Drag the time slider to move the sun from east to west.
 
+▶ **[Watch the demo video](https://youtube.com/shorts/tvQwY_UoFY4)**
+
 ![screenshot](docs/screenshot.png)
 
 ## Run
